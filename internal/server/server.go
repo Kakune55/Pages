@@ -112,14 +112,15 @@ func (s *Server) printStartupInfo() {
 		fmt.Printf("   - %s -> %s\n", site.Domain, rootDir)
 	}
 	fmt.Println("\n管理 API:")
-	fmt.Println("   - GET    /_api/health              健康检查")
-	fmt.Println("   - POST   /_api/reload              热重载配置")
-	fmt.Println("   - GET    /_api/sites               站点列表")
-	fmt.Println("   - POST   /_api/sites               创建站点")
-	fmt.Println("   - GET    /_api/sites/:username/:id 获取站点")
-	fmt.Println("   - PUT    /_api/sites/:username/:id 更新站点")
-	fmt.Println("   - DELETE /_api/sites/:username/:id 删除站点")
-	fmt.Println("\n提示: 修改站点后调用 POST /_api/reload 热重载")
+	fmt.Println("   - GET    /_api/health              			健康检查")
+	fmt.Println("   - POST   /_api/reload              			热重载配置")
+	fmt.Println("   - GET    /_api/sites               			站点列表")
+	fmt.Println("   - POST   /_api/sites               			创建站点")
+	fmt.Println("   - GET    /_api/sites/:username/:id 			获取站点")
+	fmt.Println("   - PUT    /_api/sites/:username/:id 			更新站点")
+	fmt.Println("   - DELETE /_api/sites/:username/:id 			删除站点")
+	fmt.Println("   - POST   /_api/sites/:username/:id/deploy 	一键部署")
+	fmt.Println("\n提示: 修改站点后调用 POST /_api/reload			热重载")
 }
 
 // Echo 返回 Echo 实例（用于扩展路由等）

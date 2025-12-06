@@ -397,6 +397,76 @@ GET /_api/health
 
 ---
 
+### 8. 一键部署站点
+
+上传 zip 或 tar.gz 压缩包，自动清空并替换站点根目录。
+
+**请求**
+
+```http
+POST /_api/sites/:username/:id/deploy
+Content-Type: multipart/form-data
+```
+
+**路径参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| username | string | 租户用户名 |
+| id | string | 站点 ID |
+
+**表单字段**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | file | 是 | zip 或 tar.gz 压缩包 |
+
+**行为说明**
+
+- 清空站点根目录后解压上传内容
+- 仅允许 zip、tar.gz、tgz
+- 拒绝压缩包内的符号链接，防止路径遍历
+- 解压路径限定在站点根目录内
+
+**成功响应示例**
+
+```json
+{
+  "success": true,
+  "message": "站点已部署",
+  "data": {
+    "username": "tenant1",
+    "id": "blog"
+  }
+}
+```
+
+**错误响应示例**
+
+```json
+{
+  "success": false,
+  "message": "解压 zip 失败: ..."
+}
+```
+
+**状态码**
+
+- `200 OK` - 部署成功
+- `400 Bad Request` - 文件缺失、格式不支持或解压失败
+- `404 Not Found` - 站点不存在
+- `500 Internal Server Error` - 服务器内部错误
+
+**使用示例**
+
+```bash
+curl -u admin:admin -X POST \
+  -F "file=@./dist.zip" \
+  http://localhost:1323/_api/sites/tenant1/blog/deploy
+```
+
+---
+
 ## 使用示例
 
 ### 创建新租户的站点

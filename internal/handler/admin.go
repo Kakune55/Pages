@@ -2,11 +2,15 @@ package handler
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
 
+	"pages/internal/handler/deploy"
 	"pages/internal/site"
 )
 
@@ -32,6 +36,7 @@ func (h *AdminHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/sites/:username/:id", h.GetSite)
 	g.PUT("/sites/:username/:id", h.UpdateSite)
 	g.DELETE("/sites/:username/:id", h.DeleteSite)
+	g.POST("/sites/:username/:id/deploy", h.DeploySite)
 
 	// 热重载
 	g.POST("/reload", h.Reload)
@@ -42,9 +47,9 @@ func (h *AdminHandler) RegisterRoutes(g *echo.Group) {
 
 // Response 通用响应结构
 type Response struct {
-	Success bool        `json:"success"`
-	Message string      `json:"message,omitempty"`
-	Data    any `json:"data,omitempty"`
+	Success bool   `json:"success"`
+	Message string `json:"message,omitempty"`
+	Data    any    `json:"data,omitempty"`
 }
 
 // ListSites 列出所有站点
@@ -69,7 +74,7 @@ func (h *AdminHandler) ListSites(c echo.Context) error {
 // CreateSiteRequest 创建站点请求
 type CreateSiteRequest struct {
 	ID       string `json:"id" validate:"required"`
-	Username string `json:"username"`                   // 租户用户名（可选，默认为"default"）
+	Username string `json:"username"` // 租户用户名（可选，默认为"default"）
 	Domain   string `json:"domain" validate:"required"`
 	Index    string `json:"index"`
 }
@@ -210,6 +215,117 @@ func (h *AdminHandler) DeleteSite(c echo.Context) error {
 	return c.JSON(http.StatusOK, Response{
 		Success: true,
 		Message: "站点删除成功",
+	})
+}
+
+// DeploySite 上传压缩包并部署站点
+func (h *AdminHandler) DeploySite(c echo.Context) error {
+	username := c.Param("username")
+	id := c.Param("id")
+
+	s := h.siteManager.GetByIDForUser(username, id)
+	if s == nil {
+		return c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Message: "站点不存在",
+		})
+	}
+
+	sitesDirVal := c.Get("sitesDir")
+	baseDir, ok := sitesDirVal.(string)
+	if !ok || baseDir == "" {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: "服务器配置缺失: sitesDir",
+		})
+	}
+	rootDir := s.GetRootDir(baseDir)
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Message: "缺少上传文件字段 file",
+		})
+	}
+
+	src, err := fileHeader.Open()
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Message: "无法读取上传文件",
+		})
+	}
+	defer src.Close()
+
+	tmpFile, err := os.CreateTemp("", "deploy-*")
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: "创建临时文件失败",
+		})
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := io.Copy(tmpFile, src); err != nil {
+		tmpFile.Close()
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: "保存上传文件失败",
+		})
+	}
+	if err := tmpFile.Close(); err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: "关闭临时文件失败",
+		})
+	}
+
+	// 清空并重新创建站点目录
+	if err := os.RemoveAll(rootDir); err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("清空站点目录失败: %v", err),
+		})
+	}
+	if err := os.MkdirAll(rootDir, 0755); err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("创建站点目录失败: %v", err),
+		})
+	}
+
+	filename := strings.ToLower(fileHeader.Filename)
+	switch {
+	case strings.HasSuffix(filename, ".zip"):
+		if err := deploy.ExtractZip(tmpPath, rootDir); err != nil {
+			return c.JSON(http.StatusBadRequest, Response{
+				Success: false,
+				Message: fmt.Sprintf("解压 zip 失败: %v", err),
+			})
+		}
+	case strings.HasSuffix(filename, ".tar.gz") || strings.HasSuffix(filename, ".tgz"):
+		if err := deploy.ExtractTarGz(tmpPath, rootDir); err != nil {
+			return c.JSON(http.StatusBadRequest, Response{
+				Success: false,
+				Message: fmt.Sprintf("解压 tar.gz 失败: %v", err),
+			})
+		}
+	default:
+		return c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Message: "仅支持 zip 或 tar.gz 压缩包",
+		})
+	}
+
+	return c.JSON(http.StatusOK, Response{
+		Success: true,
+		Message: "站点已部署",
+		Data: map[string]any{
+			"username": username,
+			"id":       id,
+		},
 	})
 }
 
