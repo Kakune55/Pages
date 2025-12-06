@@ -73,6 +73,59 @@ func ExtractZip(zipPath, dest string) error {
 	return nil
 }
 
+// ExtractTar 解压 tar 文件到目标目录
+func ExtractTar(archivePath, dest string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	tr := tar.NewReader(f)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		targetPath := filepath.Join(dest, hdr.Name)
+		if !isWithinRoot(dest, targetPath) {
+			return fmt.Errorf("非法路径: %s", hdr.Name)
+		}
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+				return err
+			}
+			out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return err
+			}
+			if err := out.Close(); err != nil {
+				return err
+			}
+		case tar.TypeSymlink, tar.TypeLink:
+			return fmt.Errorf("不支持压缩包内的符号链接: %s", hdr.Name)
+		default:
+			// 忽略其他类型
+		}
+	}
+
+	return nil
+}
+
 // ExtractTarGz 解压 tar.gz 文件到目标目录
 func ExtractTarGz(archivePath, dest string) error {
 	f, err := os.Open(archivePath)

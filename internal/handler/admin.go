@@ -258,7 +258,8 @@ func (h *AdminHandler) DeploySite(c echo.Context) error {
 	}
 	defer src.Close()
 
-	tmpFile, err := os.CreateTemp("", "deploy-*")
+	// 1. 保存上传文件到临时文件
+	tmpFile, err := os.CreateTemp("", "deploy-archive-*")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, Response{
 			Success: false,
@@ -282,40 +283,65 @@ func (h *AdminHandler) DeploySite(c echo.Context) error {
 		})
 	}
 
-	// 清空并重新创建站点目录
-	if err := os.RemoveAll(rootDir); err != nil {
+	// 2. 创建临时解压目录
+	tmpExtractDir, err := os.MkdirTemp("", "deploy-extract-*")
+	if err != nil {
 		return c.JSON(http.StatusInternalServerError, Response{
 			Success: false,
-			Message: fmt.Sprintf("清空站点目录失败: %v", err),
+			Message: "创建临时解压目录失败",
 		})
 	}
-	if err := os.MkdirAll(rootDir, 0755); err != nil {
-		return c.JSON(http.StatusInternalServerError, Response{
-			Success: false,
-			Message: fmt.Sprintf("创建站点目录失败: %v", err),
-		})
-	}
+	defer os.RemoveAll(tmpExtractDir)
 
+	// 3. 根据文件类型解压到临时目录
 	filename := strings.ToLower(fileHeader.Filename)
 	switch {
 	case strings.HasSuffix(filename, ".zip"):
-		if err := deploy.ExtractZip(tmpPath, rootDir); err != nil {
+		if err := deploy.ExtractZip(tmpPath, tmpExtractDir); err != nil {
 			return c.JSON(http.StatusBadRequest, Response{
 				Success: false,
 				Message: fmt.Sprintf("解压 zip 失败: %v", err),
 			})
 		}
 	case strings.HasSuffix(filename, ".tar.gz") || strings.HasSuffix(filename, ".tgz"):
-		if err := deploy.ExtractTarGz(tmpPath, rootDir); err != nil {
+		if err := deploy.ExtractTarGz(tmpPath, tmpExtractDir); err != nil {
 			return c.JSON(http.StatusBadRequest, Response{
 				Success: false,
 				Message: fmt.Sprintf("解压 tar.gz 失败: %v", err),
 			})
 		}
+	case strings.HasSuffix(filename, ".tar"):
+		if err := deploy.ExtractTar(tmpPath, tmpExtractDir); err != nil {
+			return c.JSON(http.StatusBadRequest, Response{
+				Success: false,
+				Message: fmt.Sprintf("解压 tar 失败: %v", err),
+			})
+		}
 	default:
 		return c.JSON(http.StatusBadRequest, Response{
 			Success: false,
-			Message: "仅支持 zip 或 tar.gz 压缩包",
+			Message: "仅支持 zip、tar 或 tar.gz 压缩包",
+		})
+	}
+
+	// 4. 检测并整理目录结构（展平单层嵌套）
+	normalizedDir, err := deploy.NormalizeDirectory(tmpExtractDir)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("整理目录结构失败: %v", err),
+		})
+	}
+	// 如果创建了新的临时目录，确保清理
+	if normalizedDir != tmpExtractDir {
+		defer os.RemoveAll(normalizedDir)
+	}
+
+	// 5. 原子性替换站点目录
+	if err := deploy.AtomicReplaceDirectory(rootDir, normalizedDir); err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("部署失败: %v", err),
 		})
 	}
 
@@ -348,7 +374,7 @@ func (h *AdminHandler) Reload(c echo.Context) error {
 	return c.JSON(http.StatusOK, Response{
 		Success: true,
 		Message: fmt.Sprintf("重载成功，当前 %d 个站点已生效", len(sites)),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"sites_count": len(sites),
 			"reloaded_at": time.Now(),
 		},
@@ -359,7 +385,7 @@ func (h *AdminHandler) Reload(c echo.Context) error {
 func (h *AdminHandler) Health(c echo.Context) error {
 	return c.JSON(http.StatusOK, Response{
 		Success: true,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"status":      "healthy",
 			"sites_count": h.siteManager.Count(),
 			"timestamp":   time.Now(),
