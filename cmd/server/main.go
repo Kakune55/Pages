@@ -15,13 +15,13 @@ const configPath = "config.toml"
 
 func main() {
 		// 加载配置
-	cfg, created, err := config.LoadOrInit("config.toml", true)
+	cfg, created, err := config.LoadOrInit(configPath, true)
 	if err != nil {
 		fmt.Printf("加载配置失败: %v\n", err)
 		return
 	}
 	if created {
-		slog.Info("已生成默认配置文件", "path", "config.toml")
+		slog.Info("已生成默认配置文件", "path", configPath)
 	}
 
 	// 设置日志级别
@@ -42,14 +42,6 @@ func main() {
 	}
 }
 
-// initConfig 初始化配置
-func initConfig() (*config.Config, bool, error) {
-	cfg, created, err := config.LoadOrInit(configPath, true)
-	if err != nil {
-		return nil, false, fmt.Errorf("加载配置失败: %w", err)
-	}
-	return cfg, created, nil
-}
 
 // initSites 初始化站点管理器
 func initSites(cfg *config.Config) (*site.Manager, error) {
@@ -67,9 +59,9 @@ func initSites(cfg *config.Config) (*site.Manager, error) {
 	// 如果没有站点，创建默认站点
 	if sm.Count() == 0 {
 		fmt.Println("📝 未找到站点配置，创建默认站点...")
-		if err := createDefaultSites(sm, cfg.Server.SitesDir); err != nil {
-			return nil, err
-		}
+			if err := createDefaultSites(sm); err != nil {
+				return nil, err
+			}
 	}
 
 	// 初始化站点目录
@@ -82,7 +74,7 @@ func initSites(cfg *config.Config) (*site.Manager, error) {
 }
 
 // createDefaultSites 创建默认站点（支持多租户）
-func createDefaultSites(sm *site.Manager, sitesDir string) error {
+func createDefaultSites(sm *site.Manager) error {
 	defaultSites := []*site.Site{
 		site.NewSite("default", "localhost"),
 		site.NewSite("example", "example.localhost"),
