@@ -76,6 +76,25 @@ func (m *Manager) Remove(id string) error {
 	return m.store.Remove(id)
 }
 
+// RemoveForUser 移除指定租户的站点
+func (m *Manager) RemoveForUser(username, id string) error {
+	m.mu.Lock()
+	// 找到对应的域名
+	var domain string
+	for d, site := range m.sites {
+		if site.ID == id && site.Username == username {
+			domain = d
+			break
+		}
+	}
+	if domain != "" {
+		delete(m.sites, domain)
+	}
+	m.mu.Unlock()
+
+	return m.store.RemoveForUser(username, id)
+}
+
 // Update 更新站点
 func (m *Manager) Update(site *Site) error {
 	if err := m.store.Update(site); err != nil {
@@ -87,7 +106,7 @@ func (m *Manager) Update(site *Site) error {
 
 	// 移除旧的域名映射
 	for domain, s := range m.sites {
-		if s.ID == site.ID {
+		if s.ID == site.ID && s.Username == site.Username {
 			delete(m.sites, domain)
 			break
 		}
@@ -114,13 +133,26 @@ func (m *Manager) Get(domain string) *Site {
 	return m.sites[domain]
 }
 
-// GetByID 根据 ID 获取站点
+// GetByID 根据 ID 获取站点（默认租户）
 func (m *Manager) GetByID(id string) *Site {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	for _, site := range m.sites {
 		if site.ID == id {
+			return site
+		}
+	}
+	return nil
+}
+
+// GetByIDForUser 根据租户和 ID 获取站点
+func (m *Manager) GetByIDForUser(username, id string) *Site {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, site := range m.sites {
+		if site.ID == id && site.Username == username {
 			return site
 		}
 	}
@@ -139,9 +171,28 @@ func (m *Manager) List() []*Site {
 	return sites
 }
 
+// ListForUser 列出指定租户的所有启用的站点
+func (m *Manager) ListForUser(username string) []*Site {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	sites := make([]*Site, 0)
+	for _, site := range m.sites {
+		if site.Username == username {
+			sites = append(sites, site)
+		}
+	}
+	return sites
+}
+
 // ListAll 列出所有站点（包括禁用的）
 func (m *Manager) ListAll() ([]*Site, error) {
 	return m.store.Load()
+}
+
+// ListAllForUser 列出指定租户的所有站点（包括禁用的）
+func (m *Manager) ListAllForUser(username string) ([]*Site, error) {
+	return m.store.LoadForUser(username)
 }
 
 // Count 返回启用的站点数量
@@ -151,12 +202,39 @@ func (m *Manager) Count() int {
 	return len(m.sites)
 }
 
+// CountForUser 返回指定租户启用的站点数量
+func (m *Manager) CountForUser(username string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	count := 0
+	for _, site := range m.sites {
+		if site.Username == username {
+			count++
+		}
+	}
+	return count
+}
+
 // Exists 检查域名是否已存在
 func (m *Manager) Exists(domain string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	_, exists := m.sites[domain]
 	return exists
+}
+
+// ExistsForUser 检查租户内的站点 ID 是否已存在
+func (m *Manager) ExistsForUser(username, id string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, site := range m.sites {
+		if site.Username == username && site.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // Reload 重新加载站点配置

@@ -29,9 +29,9 @@ func (h *AdminHandler) RegisterRoutes(g *echo.Group) {
 	// 站点管理
 	g.GET("/sites", h.ListSites)
 	g.POST("/sites", h.CreateSite)
-	g.GET("/sites/:id", h.GetSite)
-	g.PUT("/sites/:id", h.UpdateSite)
-	g.DELETE("/sites/:id", h.DeleteSite)
+	g.GET("/sites/:username/:id", h.GetSite)
+	g.PUT("/sites/:username/:id", h.UpdateSite)
+	g.DELETE("/sites/:username/:id", h.DeleteSite)
 
 	// 热重载
 	g.POST("/reload", h.Reload)
@@ -44,7 +44,7 @@ func (h *AdminHandler) RegisterRoutes(g *echo.Group) {
 type Response struct {
 	Success bool        `json:"success"`
 	Message string      `json:"message,omitempty"`
-	Data    interface{} `json:"data,omitempty"`
+	Data    any `json:"data,omitempty"`
 }
 
 // ListSites 列出所有站点
@@ -68,10 +68,10 @@ func (h *AdminHandler) ListSites(c echo.Context) error {
 
 // CreateSiteRequest 创建站点请求
 type CreateSiteRequest struct {
-	ID      string `json:"id" validate:"required"`
-	Domain  string `json:"domain" validate:"required"`
-	RootDir string `json:"root_dir" validate:"required"`
-	Index   string `json:"index"`
+	ID       string `json:"id" validate:"required"`
+	Username string `json:"username"`                   // 租户用户名（可选，默认为"default"）
+	Domain   string `json:"domain" validate:"required"`
+	Index    string `json:"index"`
 }
 
 // CreateSite 创建站点
@@ -84,15 +84,21 @@ func (h *AdminHandler) CreateSite(c echo.Context) error {
 		})
 	}
 
-	if req.ID == "" || req.Domain == "" || req.RootDir == "" {
+	if req.ID == "" || req.Domain == "" {
 		return c.JSON(http.StatusBadRequest, Response{
 			Success: false,
-			Message: "id, domain, root_dir 为必填字段",
+			Message: "id 和 domain 为必填字段",
 		})
 	}
 
-	// 创建站点
-	s := site.NewSite(req.ID, req.Domain, req.RootDir)
+	// 默认租户为"default"
+	username := req.Username
+	if username == "" {
+		username = "default"
+	}
+
+	// 创建站点（路径自动生成）
+	s := site.NewSiteForUser(req.ID, req.Domain, username)
 	if req.Index != "" {
 		s.Index = req.Index
 	}
@@ -118,9 +124,10 @@ func (h *AdminHandler) CreateSite(c echo.Context) error {
 
 // GetSite 获取单个站点
 func (h *AdminHandler) GetSite(c echo.Context) error {
+	username := c.Param("username")
 	id := c.Param("id")
 
-	s := h.siteManager.GetByID(id)
+	s := h.siteManager.GetByIDForUser(username, id)
 	if s == nil {
 		return c.JSON(http.StatusNotFound, Response{
 			Success: false,
@@ -137,16 +144,16 @@ func (h *AdminHandler) GetSite(c echo.Context) error {
 // UpdateSiteRequest 更新站点请求
 type UpdateSiteRequest struct {
 	Domain  string `json:"domain"`
-	RootDir string `json:"root_dir"`
 	Index   string `json:"index"`
 	Enabled *bool  `json:"enabled"`
 }
 
 // UpdateSite 更新站点
 func (h *AdminHandler) UpdateSite(c echo.Context) error {
+	username := c.Param("username")
 	id := c.Param("id")
 
-	s := h.siteManager.GetByID(id)
+	s := h.siteManager.GetByIDForUser(username, id)
 	if s == nil {
 		return c.JSON(http.StatusNotFound, Response{
 			Success: false,
@@ -162,12 +169,9 @@ func (h *AdminHandler) UpdateSite(c echo.Context) error {
 		})
 	}
 
-	// 更新字段
+	// 更新字段（不允许修改ID、Username、RootDir）
 	if req.Domain != "" {
 		s.Domain = req.Domain
-	}
-	if req.RootDir != "" {
-		s.RootDir = req.RootDir
 	}
 	if req.Index != "" {
 		s.Index = req.Index
@@ -193,9 +197,10 @@ func (h *AdminHandler) UpdateSite(c echo.Context) error {
 
 // DeleteSite 删除站点
 func (h *AdminHandler) DeleteSite(c echo.Context) error {
+	username := c.Param("username")
 	id := c.Param("id")
 
-	if err := h.siteManager.Remove(id); err != nil {
+	if err := h.siteManager.RemoveForUser(username, id); err != nil {
 		return c.JSON(http.StatusNotFound, Response{
 			Success: false,
 			Message: fmt.Sprintf("删除站点失败: %v", err),

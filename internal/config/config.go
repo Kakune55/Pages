@@ -20,6 +20,8 @@ type ServerConfig struct {
 	LogLevel  string `toml:"log_level"`
 	DataDir   string `toml:"data_dir"`   // 数据目录（存放站点配置等）
 	SitesDir  string `toml:"sites_dir"`  // 静态站点文件根目录
+	AdminUser string `toml:"admin_user"` // 管理员用户名
+	AdminPass string `toml:"admin_pass"` // 管理员密码
 }
 
 // Default 返回默认配置
@@ -30,6 +32,8 @@ func Default() *Config {
 			LogLevel: "info",
 			DataDir:  "./data",
 			SitesDir: "./data/sites",
+			AdminUser: "admin",
+			AdminPass: "admin",
 		},
 	}
 }
@@ -107,5 +111,10 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("PAGES_SITES_DIR"); v != "" {
 		cfg.Server.SitesDir = v
 	}
+	if v := os.Getenv("PAGES_ADMIN_USER"); v != "" {
+		cfg.Server.AdminUser = v
+	}
+	if v := os.Getenv("PAGES_ADMIN_PASS"); v != "" {
+		cfg.Server.AdminPass = v
+	}
 }
-

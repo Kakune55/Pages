@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"pages/internal/config"
 	"pages/internal/logging"
@@ -82,11 +81,11 @@ func initSites(cfg *config.Config) (*site.Manager, error) {
 	return sm, nil
 }
 
-// createDefaultSites 创建默认站点
+// createDefaultSites 创建默认站点（支持多租户）
 func createDefaultSites(sm *site.Manager, sitesDir string) error {
 	defaultSites := []*site.Site{
-		site.NewSite("default", "localhost", filepath.Join(sitesDir, "default")),
-		site.NewSite("example", "example.local", filepath.Join(sitesDir, "example")),
+		site.NewSite("default", "localhost"),
+		site.NewSite("example", "example.localhost"),
 	}
 
 	for _, s := range defaultSites {

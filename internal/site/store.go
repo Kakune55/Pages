@@ -11,9 +11,11 @@ import (
 // Store 站点存储接口
 type Store interface {
 	Load() ([]*Site, error)
+	LoadForUser(username string) ([]*Site, error)
 	Save(sites []*Site) error
 	Add(site *Site) error
 	Remove(id string) error
+	RemoveForUser(username, id string) error
 	Update(site *Site) error
 }
 
@@ -51,6 +53,22 @@ func (s *FileStore) Load() ([]*Site, error) {
 	}
 
 	return sites, nil
+}
+
+// LoadForUser 加载指定租户的站点
+func (s *FileStore) LoadForUser(username string) ([]*Site, error) {
+	sites, err := s.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	userSites := make([]*Site, 0)
+	for _, site := range sites {
+		if site.Username == username {
+			userSites = append(userSites, site)
+		}
+	}
+	return userSites, nil
 }
 
 // Save 保存站点列表到文件
@@ -91,10 +109,10 @@ func (s *FileStore) Add(site *Site) error {
 		return err
 	}
 
-	// 检查 ID 是否已存在
+	// 检查同租户的 ID 是否已存在
 	for _, existing := range sites {
-		if existing.ID == site.ID {
-			return fmt.Errorf("站点 ID %s 已存在", site.ID)
+		if existing.Username == site.Username && existing.ID == site.ID {
+			return fmt.Errorf("站点 ID %s 在租户 %s 中已存在", site.ID, site.Username)
 		}
 		if existing.Domain == site.Domain {
 			return fmt.Errorf("域名 %s 已被绑定", site.Domain)
@@ -132,6 +150,33 @@ func (s *FileStore) Remove(id string) error {
 	return s.saveInternal(newSites)
 }
 
+// RemoveForUser 移除指定租户的站点
+func (s *FileStore) RemoveForUser(username, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sites, err := s.loadInternal()
+	if err != nil {
+		return err
+	}
+
+	found := false
+	newSites := make([]*Site, 0, len(sites))
+	for _, site := range sites {
+		if site.Username == username && site.ID == id {
+			found = true
+		} else {
+			newSites = append(newSites, site)
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("站点 %s 不在租户 %s 中", id, username)
+	}
+
+	return s.saveInternal(newSites)
+}
+
 // Update 更新站点
 func (s *FileStore) Update(site *Site) error {
 	s.mu.Lock()
@@ -144,7 +189,7 @@ func (s *FileStore) Update(site *Site) error {
 
 	found := false
 	for i, existing := range sites {
-		if existing.ID == site.ID {
+		if existing.ID == site.ID && existing.Username == site.Username {
 			sites[i] = site
 			found = true
 			break
@@ -152,7 +197,7 @@ func (s *FileStore) Update(site *Site) error {
 	}
 
 	if !found {
-		return fmt.Errorf("站点 %s 不存在", site.ID)
+		return fmt.Errorf("站点 %s 不在租户 %s 中", site.ID, site.Username)
 	}
 
 	return s.saveInternal(sites)

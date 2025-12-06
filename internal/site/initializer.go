@@ -30,13 +30,16 @@ func (i *Initializer) InitializeSites(sites []*Site) error {
 
 // initializeSite 初始化单个站点
 func (i *Initializer) initializeSite(site *Site) error {
+	// 根据站点信息自动生成目录路径
+	siteDir := site.GetRootDir(i.sitesDir)
+
 	// 创建目录
-	if err := os.MkdirAll(site.RootDir, 0755); err != nil {
-		return fmt.Errorf("创建目录 %s 失败: %w", site.RootDir, err)
+	if err := os.MkdirAll(siteDir, 0755); err != nil {
+		return fmt.Errorf("创建目录 %s 失败: %w", siteDir, err)
 	}
 
 	// 创建示例 index.html
-	indexPath := filepath.Join(site.RootDir, site.Index)
+	indexPath := filepath.Join(siteDir, site.Index)
 	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
 		html := i.generateDefaultHTML(site)
 		if err := os.WriteFile(indexPath, []byte(html), 0644); err != nil {

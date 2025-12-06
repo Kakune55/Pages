@@ -70,12 +70,25 @@ func (s *Server) setupMiddleware() {
 
 	// CORS 中间件
 	s.echo.Use(echomw.CORS())
+
+	// 设置站点目录到context
+	s.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set("sitesDir", s.config.Server.SitesDir)
+			return next(c)
+		}
+	})
 }
 
 // setupRoutes 设置路由
 func (s *Server) setupRoutes() {
 	// 管理 API（在静态文件中间件之前注册，优先级更高）
 	adminGroup := s.echo.Group("/_api")
+	adminGroup.Use(echomw.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+		adminUser := s.config.Server.AdminUser
+		adminPass := s.config.Server.AdminPass
+		return username == adminUser && password == adminPass, nil
+	}))
 	adminHandler := handler.NewAdminHandler(s.siteManager, s.initializer)
 	adminHandler.RegisterRoutes(adminGroup)
 
@@ -95,16 +108,17 @@ func (s *Server) printStartupInfo() {
 	fmt.Printf("监听端口: %s\n", s.config.Server.Port)
 	fmt.Println("已配置的站点:")
 	for _, site := range s.siteManager.List() {
-		fmt.Printf("   - %s -> %s\n", site.Domain, site.RootDir)
+		rootDir := site.GetRootDir(s.config.Server.SitesDir)
+		fmt.Printf("   - %s -> %s\n", site.Domain, rootDir)
 	}
 	fmt.Println("\n管理 API:")
-	fmt.Println("   - GET    /_api/health       健康检查")
-	fmt.Println("   - POST   /_api/reload       热重载配置")
-	fmt.Println("   - GET    /_api/sites        站点列表")
-	fmt.Println("   - POST   /_api/sites        创建站点")
-	fmt.Println("   - GET    /_api/sites/:id    获取站点")
-	fmt.Println("   - PUT    /_api/sites/:id    更新站点")
-	fmt.Println("   - DELETE /_api/sites/:id    删除站点")
+	fmt.Println("   - GET    /_api/health              健康检查")
+	fmt.Println("   - POST   /_api/reload              热重载配置")
+	fmt.Println("   - GET    /_api/sites               站点列表")
+	fmt.Println("   - POST   /_api/sites               创建站点")
+	fmt.Println("   - GET    /_api/sites/:username/:id 获取站点")
+	fmt.Println("   - PUT    /_api/sites/:username/:id 更新站点")
+	fmt.Println("   - DELETE /_api/sites/:username/:id 删除站点")
 	fmt.Println("\n提示: 修改站点后调用 POST /_api/reload 热重载")
 }
 

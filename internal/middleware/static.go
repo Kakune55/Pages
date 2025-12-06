@@ -35,11 +35,12 @@ func StaticFileServer(sm *site.Manager) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			// 构建文件路径
-			filePath := filepath.Join(s.RootDir, reqPath)
+			// 构建文件路径（获取站点根目录）
+			rootDir := s.GetRootDir(c.Get("sitesDir").(string))
+			filePath := filepath.Join(rootDir, reqPath)
 
 			// 安全检查：防止路径遍历攻击
-			if !isPathSafe(s.RootDir, filePath) {
+			if !isPathSafe(rootDir, filePath) {
 				return c.JSON(http.StatusForbidden, map[string]string{
 					"error": "禁止访问",
 				})
@@ -48,7 +49,7 @@ func StaticFileServer(sm *site.Manager) echo.MiddlewareFunc {
 			// 检查文件是否存在
 			info, err := os.Stat(filePath)
 			if os.IsNotExist(err) {
-				return handleNotFound(c, s.RootDir, reqPath)
+				return handleNotFound(c, rootDir, reqPath)
 			}
 
 			// 如果是目录，尝试返回 index.html
