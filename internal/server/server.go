@@ -2,9 +2,7 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"path/filepath"
 
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
@@ -106,30 +104,32 @@ func (s *Server) Start() error {
 	return s.echo.Start(":" + s.config.Server.Port)
 }
 
+// Shutdown 优雅停止服务器
+func (s *Server) Shutdown(ctx context.Context) error {
+	slog.Info("正在优雅关闭服务器...")
+	
+	// 关闭 HTTP 服务器
+	if err := s.echo.Shutdown(ctx); err != nil {
+		slog.Error("HTTP服务器关闭失败", "error", err)
+		return err
+	}
+	
+	slog.Info("服务器已关闭")
+	return nil
+}
+
 // printStartupInfo 打印启动信息
 func (s *Server) printStartupInfo() {
-	fmt.Println("静态网站托管服务启动中...")
-	fmt.Printf("监听端口: %s\n", s.config.Server.Port)
-	fmt.Println("已配置的站点:")
-	for _, snap := range s.siteManager.List() {
-		rootDir := filepath.Join(s.config.Server.SitesDir, snap.RootDir)
-		fmt.Printf("   - %s -> %s\n", snap.Domain, rootDir)
-	}
-	fmt.Println("\n管理 API:")
-	fmt.Println("   - GET    /_api/health              					健康检查")
-	fmt.Println("   - POST   /_api/reload              					热重载配置")
-	fmt.Println("   - GET    /_api/sites               					站点列表")
-	fmt.Println("   - POST   /_api/sites               					创建站点")
-	fmt.Println("   - GET    /_api/sites/:username/:id 					获取站点")
-	fmt.Println("   - PUT    /_api/sites/:username/:id 					更新站点")
-	fmt.Println("   - DELETE /_api/sites/:username/:id 					删除站点")
-	fmt.Println("   - POST   /_api/sites/:username/:id/deploy 			一键部署")
-	fmt.Println("\n检查点 API:")
-	fmt.Println("   - GET    /_api/sites/:username/:id/checkpoints 		检查点列表")
-	fmt.Println("   - GET    /_api/sites/:username/:id/checkpoints/:checkpoint_id 		检查点详情")
-	fmt.Println("   - DELETE /_api/sites/:username/:id/checkpoints/:checkpoint_id 		删除检查点")
-	fmt.Println("   - POST   /_api/sites/:username/:id/checkpoints/:checkpoint_id/checkout	恢复检查点")
-	fmt.Println("\n提示: 修改站点后调用 POST /_api/reload			热重载")
+	slog.Info("服务器启动",
+		slog.String("port", s.config.Server.Port),
+		slog.String("sites_dir", s.config.Server.SitesDir),
+	)
+	slog.Info("已加载Pages站点数量",
+		slog.Int("count", len(s.siteManager.List())),
+	)
+	slog.Info("管理API路径",
+		slog.String("url", "/_api"),
+	)
 }
 
 // Echo 返回 Echo 实例（用于扩展路由等）

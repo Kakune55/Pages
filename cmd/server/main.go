@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"pages/internal/config"
 	"pages/internal/logging"
@@ -36,10 +42,32 @@ func main() {
 
 	// 创建并启动服务器
 	srv := server.New(cfg, sm)
-	if err := srv.Start(); err != nil {
-		fmt.Printf("❌ 服务器启动失败: %v\n", err)
+	
+	// 在 goroutine 中启动服务器
+	go func() {
+		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("服务器异常退出", "error", err)
+			os.Exit(1)
+		}
+	}()
+	
+	// 等待中断信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	
+	// 优雅停止服务器
+	slog.Info("收到退出信号，正在关闭服务器...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("服务器关闭失败", "error", err)
 		os.Exit(1)
 	}
+	
+	slog.Info("服务器已安全退出")
+	slog.Info("Bye!")
 }
 
 

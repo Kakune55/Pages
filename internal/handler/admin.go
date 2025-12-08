@@ -32,22 +32,23 @@ func NewAdminHandler(sm *site.ManagerLockFree, init *site.Initializer, checkpoin
 
 // RegisterRoutes 注册管理路由
 func (h *AdminHandler) RegisterRoutes(g *echo.Group) {
+	siteGroup := g.Group("/sites")
 	// 站点管理
-	g.GET("/sites", h.ListSites)
-	g.POST("/sites", h.CreateSite)
-	g.GET("/sites/:username/:id", h.GetSite)
-	g.PUT("/sites/:username/:id", h.UpdateSite)
-	g.DELETE("/sites/:username/:id", h.DeleteSite)
-	g.POST("/sites/:username/:id/deploy", h.DeploySite)
+	siteGroup.GET("", h.ListSites)
+	siteGroup.POST("", h.CreateSite)
+	siteGroup.GET("/:username/:id", h.GetSite)
+	siteGroup.PUT("/:username/:id", h.UpdateSite)
+	siteGroup.DELETE("/:username/:id", h.DeleteSite)
+	siteGroup.POST("/:username/:id/deploy", h.DeploySite)
 
 	// 检查点管理
-	g.GET("/sites/:username/:id/checkpoints", h.ListCheckpoints)
-	g.GET("/sites/:username/:id/checkpoints/:checkpoint_id", h.GetCheckpoint)
-	g.DELETE("/sites/:username/:id/checkpoints/:checkpoint_id", h.DeleteCheckpoint)
-	g.POST("/sites/:username/:id/checkpoints/:checkpoint_id/checkout", h.CheckoutCheckpoint)
+	siteGroup.GET("/:username/:id/checkpoints", h.ListCheckpoints)
+	siteGroup.GET("/:username/:id/checkpoints/:checkpoint_id", h.GetCheckpoint)
+	siteGroup.DELETE("/:username/:id/checkpoints/:checkpoint_id", h.DeleteCheckpoint)
+	siteGroup.POST("/:username/:id/checkpoints/:checkpoint_id/checkout", h.CheckoutCheckpoint)
 
 	// 热重载
-	g.POST("/reload", h.Reload)
+	siteGroup.POST("/reload", h.Reload)
 
 	// 健康检查
 	g.GET("/health", h.Health)
@@ -72,7 +73,7 @@ func (h *AdminHandler) ListSites(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, Response{
 		Success: true,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"sites": sites,
 			"total": len(sites),
 		},
