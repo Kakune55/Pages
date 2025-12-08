@@ -27,11 +27,12 @@ type Checkpoint struct {
 
 // SiteCheckpointMetadata 站点检查点元数据
 type SiteCheckpointMetadata struct {
-	SiteID      string       `json:"site_id"`       // 站点 ID
-	Username    string       `json:"username"`      // 租户用户名
-	Current     string       `json:"current"`       // 当前激活的检查点 ID
-	Checkpoints []Checkpoint `json:"checkpoints"`   // 所有检查点列表
-	UpdatedAt   time.Time    `json:"updated_at"`    // 最后更新时间
+	SiteID       string       `json:"site_id"`        // 站点 ID
+	Username     string       `json:"username"`       // 租户用户名
+	Current      string       `json:"current"`        // 当前激活的检查点 ID
+	Checkpoints  []Checkpoint `json:"checkpoints"`    // 所有检查点列表
+	StorageUsage *DiskUsage   `json:"storage_usage"`  // 存储使用量缓存
+	UpdatedAt    time.Time    `json:"updated_at"`     // 最后更新时间
 }
 
 // CheckpointManager 管理检查点
@@ -117,6 +118,9 @@ func (m *CheckpointManager) CreateCheckpoint(username, siteID, sourceDir, origin
 		return nil, fmt.Errorf("保存站点元数据失败: %w", err)
 	}
 
+	// 重算存储使用量 (忽略错误,不影响检查点创建)
+	_ = m.StorageRecount(username, siteID, sourceDir)
+
 	return checkpoint, nil
 }
 
@@ -163,7 +167,14 @@ func (m *CheckpointManager) CheckoutCheckpoint(username, siteID, checkpointID, t
 	metadata.UpdatedAt = time.Now()
 
 	// 保存更新后的元数据
-	return m.saveSiteMetadata(metadata)
+	if err := m.saveSiteMetadata(metadata); err != nil {
+		return err
+	}
+
+	// 重算存储使用量 (忽略错误,不影响切换操作)
+	_ = m.StorageRecount(username, siteID, targetDir)
+
+	return nil
 }
 
 // ListCheckpoints 列出指定站点的所有检查点
@@ -418,6 +429,93 @@ func ExtractTarGzSimple(archivePath, dest string) error {
 	}
 
 	return nil
+}
+
+// GetCheckpointsUsage 获取指定站点的检查点使用情况
+func (m *CheckpointManager) GetCheckpointsUsage(username, siteID string) (totalSize int64, count int, err error) {
+	checkpointsDir := m.getCheckpointsSubDir(username, siteID)
+	
+	if _, err := os.Stat(checkpointsDir); os.IsNotExist(err) {
+		return 0, 0, nil
+	}
+
+	err = filepath.Walk(checkpointsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // 忽略错误,继续统计
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".gz" {
+			totalSize += info.Size()
+			count++
+		}
+		return nil
+	})
+
+	if err != nil {
+		return 0, 0, fmt.Errorf("遍历检查点目录失败: %w", err)
+	}
+
+	return totalSize, count, nil
+}
+
+// StorageRecount 重新计算并更新站点的存储使用量到元数据
+// rootDir: 站点部署根目录
+func (m *CheckpointManager) StorageRecount(username, siteID, rootDir string) error {
+	// 加载现有元数据
+	metadata, err := m.loadSiteMetadata(username, siteID)
+	if err != nil {
+		return fmt.Errorf("加载元数据失败: %w", err)
+	}
+
+	// 计算部署目录使用量
+	var deployedSize, fileCount int64
+	if _, err := os.Stat(rootDir); err == nil {
+		deployedSize, fileCount, err = calculateDirSize(rootDir)
+		if err != nil {
+			return fmt.Errorf("计算部署目录大小失败: %w", err)
+		}
+	}
+
+	// 计算检查点使用量
+	checkpointsSize, checkpointCount, err := m.GetCheckpointsUsage(username, siteID)
+	if err != nil {
+		return fmt.Errorf("计算检查点大小失败: %w", err)
+	}
+
+	// 构建存储使用量对象
+	totalSize := deployedSize + checkpointsSize
+	metadata.StorageUsage = &DiskUsage{
+		DeployedSize:      deployedSize,
+		CheckpointsSize:   checkpointsSize,
+		TotalSize:         totalSize,
+		DeployedSizeHR:    formatBytes(deployedSize),
+		CheckpointsSizeHR: formatBytes(checkpointsSize),
+		TotalSizeHR:       formatBytes(totalSize),
+		FileCount:         fileCount,
+		CheckpointCount:   checkpointCount,
+	}
+	metadata.UpdatedAt = time.Now()
+
+	// 保存元数据
+	if err := m.saveSiteMetadata(metadata); err != nil {
+		return fmt.Errorf("保存元数据失败: %w", err)
+	}
+
+	return nil
+}
+
+// GetStorageUsage 从元数据中获取缓存的存储使用量
+func (m *CheckpointManager) GetStorageUsage(username, siteID string) (*DiskUsage, error) {
+	metadata, err := m.loadSiteMetadata(username, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("加载元数据失败: %w", err)
+	}
+
+	if metadata.StorageUsage == nil {
+		// 如果缓存不存在,返回空的使用量信息
+		return &DiskUsage{}, nil
+	}
+
+	return metadata.StorageUsage, nil
 }
 
 

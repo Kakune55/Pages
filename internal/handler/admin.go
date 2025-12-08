@@ -37,6 +37,7 @@ func (h *AdminHandler) RegisterRoutes(g *echo.Group) {
 	siteGroup.GET("", h.ListSites)
 	siteGroup.POST("", h.CreateSite)
 	siteGroup.GET("/:username/:id", h.GetSite)
+	siteGroup.GET("/:username/:id/usage", h.GetSiteUsage)
 	siteGroup.PUT("/:username/:id", h.UpdateSite)
 	siteGroup.DELETE("/:username/:id", h.DeleteSite)
 	siteGroup.POST("/:username/:id/deploy", h.DeploySite)
@@ -383,6 +384,11 @@ func (h *AdminHandler) DeploySite(c echo.Context) error {
 		})
 	}
 
+	// 7. 重算存储使用量 (如果没有创建检查点,需要手动触发)
+	if checkpoint == nil {
+		_ = h.checkpointManager.StorageRecount(username, id, rootDir)
+	}
+
 	result := map[string]any{
 		"username": username,
 		"id":       id,
@@ -584,5 +590,79 @@ func (h *AdminHandler) CheckoutCheckpoint(c echo.Context) error {
 			"id":            id,
 			"checkpoint_id": checkpointID,
 		},
+	})
+}
+
+// GetSiteUsage 获取站点使用情况(磁盘空间等) - 从元数据缓存读取
+func (h *AdminHandler) GetSiteUsage(c echo.Context) error {
+	username := c.Param("username")
+	id := c.Param("id")
+
+	// 验证站点是否存在
+	s := h.siteManager.GetByIDForUser(username, id)
+	if s == nil {
+		return c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Message: "站点不存在",
+		})
+	}
+
+	// 从元数据中读取缓存的使用量信息
+	usage, err := h.checkpointManager.GetStorageUsage(username, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("获取站点使用情况失败: %v", err),
+		})
+	}
+
+	// 如果缓存为空(首次查询或元数据不存在),触发一次重算
+	if usage.TotalSize == 0 && usage.DeployedSize == 0 {
+		sitesDirVal := c.Get("sitesDir")
+		baseDir, ok := sitesDirVal.(string)
+		if !ok || baseDir == "" {
+			return c.JSON(http.StatusInternalServerError, Response{
+				Success: false,
+				Message: "服务器配置缺失: sitesDir",
+			})
+		}
+
+		s, err := h.siteManager.GetFullSiteByIDForUser(username, id)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, Response{
+				Success: false,
+				Message: fmt.Sprintf("获取站点失败: %v", err),
+			})
+		}
+		if s == nil {
+			return c.JSON(http.StatusNotFound, Response{
+				Success: false,
+				Message: "站点不存在",
+			})
+		}
+
+		rootDir := s.GetRootDir(baseDir)
+		
+		// 触发重算
+		if err := h.checkpointManager.StorageRecount(username, id, rootDir); err != nil {
+			return c.JSON(http.StatusInternalServerError, Response{
+				Success: false,
+				Message: fmt.Sprintf("计算站点使用情况失败: %v", err),
+			})
+		}
+
+		// 重新读取
+		usage, err = h.checkpointManager.GetStorageUsage(username, id)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, Response{
+				Success: false,
+				Message: fmt.Sprintf("获取站点使用情况失败: %v", err),
+			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    usage,
 	})
 }
