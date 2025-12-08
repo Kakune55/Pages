@@ -229,6 +229,8 @@ func (m *CheckpointManager) DeleteCheckpoint(username, siteID, checkpointID stri
 		return fmt.Errorf("删除检查点文件失败: %w", err)
 	}
 
+	metadata.StorageUsage = nil
+
 	// 保存更新后的元数据
 	return m.saveSiteMetadata(metadata)
 }

@@ -8,7 +8,7 @@ import (
 	echomw "github.com/labstack/echo/v4/middleware"
 
 	"pages/internal/config"
-	"pages/internal/handler"
+	"pages/internal/handler/admin"
 	"pages/internal/middleware"
 	"pages/internal/site"
 )
@@ -91,7 +91,7 @@ func (s *Server) setupRoutes() {
 	
 	// 检查点存储在站点目录的父级 checkpoints 目录
 	checkpointsDir := s.config.Server.SitesDir + "-checkpoints"
-	adminHandler := handler.NewAdminHandler(s.siteManager, s.initializer, checkpointsDir)
+	adminHandler := admin.NewHandler(s.siteManager, s.initializer, checkpointsDir)
 	adminHandler.RegisterRoutes(adminGroup)
 
 	// 静态文件服务（作为最后的中间件，处理所有其他请求）

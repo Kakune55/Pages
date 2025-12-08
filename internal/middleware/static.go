@@ -26,6 +26,14 @@ func StaticFileServer(sm *site.ManagerLockFree) echo.MiddlewareFunc {
 				})
 			}
 
+			// 检查站点是否已启用
+			if !snap.Enabled {
+				return c.JSON(http.StatusServiceUnavailable, map[string]string{
+					"error":   "站点已禁用",
+					"message": fmt.Sprintf("域名 %s 对应的站点已被管理员禁用", host),
+				})
+			}
+
 			// 获取请求路径
 			reqPath := c.Request().URL.Path
 			if reqPath == "/" {
@@ -43,7 +51,7 @@ func StaticFileServer(sm *site.ManagerLockFree) echo.MiddlewareFunc {
 					"error": "服务器配置缺失: sitesDir",
 				})
 			}
-			rootDir := filepath.Join(baseDir, snap.RootDir)
+			rootDir := filepath.Join(baseDir, snap.Username, snap.ID)
 			filePath := filepath.Join(rootDir, reqPath)
 
 			// 安全检查：防止路径遍历攻击
