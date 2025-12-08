@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // ExtractZip 解压 zip 文件到目标目录
@@ -185,19 +184,22 @@ func ExtractTarGz(archivePath, dest string) error {
 	return nil
 }
 
-// isWithinRoot 确保路径位于根目录内，防止路径遍历
-func isWithinRoot(root, target string) bool {
-	absRoot, err := filepath.Abs(root)
+// isWithinRoot 检查路径是否在根目录内（防止路径遍历攻击）
+func isWithinRoot(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
-	absTarget, err := filepath.Abs(target)
-	if err != nil {
-		return false
-	}
+	return !filepath.IsAbs(rel) && !isPathTraversal(rel)
+}
 
-	if absRoot == absTarget {
-		return true
+// isPathTraversal 检查路径是否包含路径遍历
+func isPathTraversal(path string) bool {
+	parts := filepath.SplitList(path)
+	for _, part := range parts {
+		if part == ".." {
+			return true
+		}
 	}
-	return strings.HasPrefix(absTarget, absRoot+string(os.PathSeparator))
+	return false
 }

@@ -35,7 +35,7 @@ func StaticFileServer(sm *site.Manager) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			// 构建文件路径（获取站点根目录）
+			// 构建文件路径
 			rootDir := s.GetRootDir(c.Get("sitesDir").(string))
 			filePath := filepath.Join(rootDir, reqPath)
 

@@ -16,15 +16,17 @@ import (
 
 // AdminHandler 管理接口处理器
 type AdminHandler struct {
-	siteManager *site.Manager
-	initializer *site.Initializer
+	siteManager        *site.Manager
+	initializer        *site.Initializer
+	checkpointManager  *deploy.CheckpointManager
 }
 
 // NewAdminHandler 创建管理接口处理器
-func NewAdminHandler(sm *site.Manager, init *site.Initializer) *AdminHandler {
+func NewAdminHandler(sm *site.Manager, init *site.Initializer, checkpointsDir string) *AdminHandler {
 	return &AdminHandler{
-		siteManager: sm,
-		initializer: init,
+		siteManager:       sm,
+		initializer:       init,
+		checkpointManager: deploy.NewCheckpointManager(checkpointsDir),
 	}
 }
 
@@ -37,6 +39,12 @@ func (h *AdminHandler) RegisterRoutes(g *echo.Group) {
 	g.PUT("/sites/:username/:id", h.UpdateSite)
 	g.DELETE("/sites/:username/:id", h.DeleteSite)
 	g.POST("/sites/:username/:id/deploy", h.DeploySite)
+
+	// 检查点管理
+	g.GET("/sites/:username/:id/checkpoints", h.ListCheckpoints)
+	g.GET("/sites/:username/:id/checkpoints/:checkpoint_id", h.GetCheckpoint)
+	g.DELETE("/sites/:username/:id/checkpoints/:checkpoint_id", h.DeleteCheckpoint)
+	g.POST("/sites/:username/:id/checkpoints/:checkpoint_id/checkout", h.CheckoutCheckpoint)
 
 	// 热重载
 	g.POST("/reload", h.Reload)
@@ -337,7 +345,18 @@ func (h *AdminHandler) DeploySite(c echo.Context) error {
 		defer os.RemoveAll(normalizedDir)
 	}
 
-	// 5. 原子性替换站点目录
+	// 5. 创建检查点（如果站点目录已存在）
+	var checkpoint *deploy.Checkpoint
+	if _, err := os.Stat(rootDir); err == nil {
+		// 站点目录存在，创建检查点
+		checkpoint, err = h.checkpointManager.CreateCheckpoint(username, id, rootDir, fileHeader.Filename)
+		if err != nil {
+			// 检查点创建失败不中断部署，只记录错误
+			c.Logger().Warnf("创建检查点失败 (继续部署): %v", err)
+		}
+	}
+
+	// 6. 原子性替换站点目录
 	if err := deploy.AtomicReplaceDirectory(rootDir, normalizedDir); err != nil {
 		return c.JSON(http.StatusInternalServerError, Response{
 			Success: false,
@@ -345,13 +364,18 @@ func (h *AdminHandler) DeploySite(c echo.Context) error {
 		})
 	}
 
+	result := map[string]any{
+		"username": username,
+		"id":       id,
+	}
+	if checkpoint != nil {
+		result["checkpoint"] = checkpoint
+	}
+
 	return c.JSON(http.StatusOK, Response{
 		Success: true,
 		Message: "站点已部署",
-		Data: map[string]any{
-			"username": username,
-			"id":       id,
-		},
+		Data:    result,
 	})
 }
 
@@ -389,6 +413,139 @@ func (h *AdminHandler) Health(c echo.Context) error {
 			"status":      "healthy",
 			"sites_count": h.siteManager.Count(),
 			"timestamp":   time.Now(),
+		},
+	})
+}
+
+// ListCheckpoints 列出站点的所有检查点
+func (h *AdminHandler) ListCheckpoints(c echo.Context) error {
+	username := c.Param("username")
+	id := c.Param("id")
+
+	// 验证站点是否存在
+	s := h.siteManager.GetByIDForUser(username, id)
+	if s == nil {
+		return c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Message: "站点不存在",
+		})
+	}
+
+	metadata, err := h.checkpointManager.ListCheckpoints(username, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("获取检查点列表失败: %v", err),
+		})
+	}
+
+	return c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data: map[string]any{
+			"current":     metadata.Current,
+			"checkpoints": metadata.Checkpoints,
+			"total":       len(metadata.Checkpoints),
+		},
+	})
+}
+
+// GetCheckpoint 获取指定检查点信息
+func (h *AdminHandler) GetCheckpoint(c echo.Context) error {
+	username := c.Param("username")
+	id := c.Param("id")
+	checkpointID := c.Param("checkpoint_id")
+
+	// 验证站点是否存在
+	s := h.siteManager.GetByIDForUser(username, id)
+	if s == nil {
+		return c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Message: "站点不存在",
+		})
+	}
+
+	checkpoint, err := h.checkpointManager.GetCheckpoint(username, id, checkpointID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Message: fmt.Sprintf("检查点不存在: %v", err),
+		})
+	}
+
+	return c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    checkpoint,
+	})
+}
+
+// DeleteCheckpoint 删除检查点
+func (h *AdminHandler) DeleteCheckpoint(c echo.Context) error {
+	username := c.Param("username")
+	id := c.Param("id")
+	checkpointID := c.Param("checkpoint_id")
+
+	// 验证站点是否存在
+	s := h.siteManager.GetByIDForUser(username, id)
+	if s == nil {
+		return c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Message: "站点不存在",
+		})
+	}
+
+	if err := h.checkpointManager.DeleteCheckpoint(username, id, checkpointID); err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("删除检查点失败: %v", err),
+		})
+	}
+
+	return c.JSON(http.StatusOK, Response{
+		Success: true,
+		Message: "检查点已删除",
+	})
+}
+
+// CheckoutCheckpoint 切换站点到指定检查点（仅切换，不创建新检查点）
+func (h *AdminHandler) CheckoutCheckpoint(c echo.Context) error {
+	username := c.Param("username")
+	id := c.Param("id")
+	checkpointID := c.Param("checkpoint_id")
+
+	// 验证站点是否存在
+	s := h.siteManager.GetByIDForUser(username, id)
+	if s == nil {
+		return c.JSON(http.StatusNotFound, Response{
+			Success: false,
+			Message: "站点不存在",
+		})
+	}
+
+	sitesDirVal := c.Get("sitesDir")
+	baseDir, ok := sitesDirVal.(string)
+	if !ok || baseDir == "" {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: "服务器配置缺失: sitesDir",
+		})
+	}
+	rootDir := s.GetRootDir(baseDir)
+
+	// 切换到指定检查点（不创建新检查点，仅切换 current 指针）
+	if err := h.checkpointManager.CheckoutCheckpoint(username, id, checkpointID, rootDir); err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("切换检查点失败: %v", err),
+		})
+	}
+
+	return c.JSON(http.StatusOK, Response{
+		Success: true,
+		Message: "站点已切换到检查点",
+		Data: map[string]any{
+			"username":      username,
+			"id":            id,
+			"checkpoint_id": checkpointID,
 		},
 	})
 }

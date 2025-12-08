@@ -89,7 +89,10 @@ func (s *Server) setupRoutes() {
 		adminPass := s.config.Server.AdminPass
 		return username == adminUser && password == adminPass, nil
 	}))
-	adminHandler := handler.NewAdminHandler(s.siteManager, s.initializer)
+	
+	// 检查点存储在站点目录的父级 checkpoints 目录
+	checkpointsDir := s.config.Server.SitesDir + "-checkpoints"
+	adminHandler := handler.NewAdminHandler(s.siteManager, s.initializer, checkpointsDir)
 	adminHandler.RegisterRoutes(adminGroup)
 
 	// 静态文件服务（作为最后的中间件，处理所有其他请求）
@@ -112,14 +115,19 @@ func (s *Server) printStartupInfo() {
 		fmt.Printf("   - %s -> %s\n", site.Domain, rootDir)
 	}
 	fmt.Println("\n管理 API:")
-	fmt.Println("   - GET    /_api/health              			健康检查")
-	fmt.Println("   - POST   /_api/reload              			热重载配置")
-	fmt.Println("   - GET    /_api/sites               			站点列表")
-	fmt.Println("   - POST   /_api/sites               			创建站点")
-	fmt.Println("   - GET    /_api/sites/:username/:id 			获取站点")
-	fmt.Println("   - PUT    /_api/sites/:username/:id 			更新站点")
-	fmt.Println("   - DELETE /_api/sites/:username/:id 			删除站点")
-	fmt.Println("   - POST   /_api/sites/:username/:id/deploy 	一键部署")
+	fmt.Println("   - GET    /_api/health              					健康检查")
+	fmt.Println("   - POST   /_api/reload              					热重载配置")
+	fmt.Println("   - GET    /_api/sites               					站点列表")
+	fmt.Println("   - POST   /_api/sites               					创建站点")
+	fmt.Println("   - GET    /_api/sites/:username/:id 					获取站点")
+	fmt.Println("   - PUT    /_api/sites/:username/:id 					更新站点")
+	fmt.Println("   - DELETE /_api/sites/:username/:id 					删除站点")
+	fmt.Println("   - POST   /_api/sites/:username/:id/deploy 			一键部署")
+	fmt.Println("\n检查点 API:")
+	fmt.Println("   - GET    /_api/sites/:username/:id/checkpoints 		检查点列表")
+	fmt.Println("   - GET    /_api/sites/:username/:id/checkpoints/:checkpoint_id 		检查点详情")
+	fmt.Println("   - DELETE /_api/sites/:username/:id/checkpoints/:checkpoint_id 		删除检查点")
+	fmt.Println("   - POST   /_api/sites/:username/:id/checkpoints/:checkpoint_id/checkout	恢复检查点")
 	fmt.Println("\n提示: 修改站点后调用 POST /_api/reload			热重载")
 }
 

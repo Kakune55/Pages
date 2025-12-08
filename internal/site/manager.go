@@ -120,24 +120,37 @@ func (m *Manager) Update(site *Site) error {
 	return nil
 }
 
-// Get 根据域名获取站点
+// Get 根据域名获取站点 返回只读引用
+// 返回的 Site 指针不应该被修改，仅用于读取配置
+// 如果需要修改，请使用 GetSnapshot 获取副本
 func (m *Manager) Get(domain string) *Site {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	// 移除端口号
 	if idx := strings.Index(domain, ":"); idx != -1 {
 		domain = domain[:idx]
 	}
+	
+	m.mu.RLock()
+	site := m.sites[domain]
+	m.mu.RUnlock()
+	
+	return site
+}
 
-	return m.sites[domain]
+// GetSnapshot 根据域名获取站点快照 Deep Copy
+// 用于需要修改站点信息的场景
+func (m *Manager) GetSnapshot(domain string) *Site {
+	site := m.Get(domain)
+	if site == nil {
+		return nil
+	}
+	return site.Clone()
 }
 
 // GetByID 根据 ID 获取站点（默认租户）
 func (m *Manager) GetByID(id string) *Site {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
+	
 	for _, site := range m.sites {
 		if site.ID == id {
 			return site
@@ -150,7 +163,7 @@ func (m *Manager) GetByID(id string) *Site {
 func (m *Manager) GetByIDForUser(username, id string) *Site {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
+	
 	for _, site := range m.sites {
 		if site.ID == id && site.Username == username {
 			return site
@@ -162,27 +175,37 @@ func (m *Manager) GetByIDForUser(username, id string) *Site {
 // List 列出所有启用的站点
 func (m *Manager) List() []*Site {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	sites := make([]*Site, 0, len(m.sites))
 	for _, site := range m.sites {
 		sites = append(sites, site)
 	}
-	return sites
+	m.mu.RUnlock()
+
+	// 返回副本列表
+	clones := make([]*Site, len(sites))
+	for i, site := range sites {
+		clones[i] = site.Clone()
+	}
+	return clones
 }
 
 // ListForUser 列出指定租户的所有启用的站点
 func (m *Manager) ListForUser(username string) []*Site {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	sites := make([]*Site, 0)
 	for _, site := range m.sites {
 		if site.Username == username {
 			sites = append(sites, site)
 		}
 	}
-	return sites
+	m.mu.RUnlock()
+
+	// 返回副本列表
+	clones := make([]*Site, len(sites))
+	for i, site := range sites {
+		clones[i] = site.Clone()
+	}
+	return clones
 }
 
 // ListAll 列出所有站点（包括禁用的）

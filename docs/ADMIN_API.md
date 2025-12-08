@@ -602,3 +602,368 @@ curl -u admin:admin http://localhost:1323/_api/sites/user2/blog
 ```
 
 不同租户的站点存储在不同的目录中，实现了完整的数据隔离和租户隔离。
+
+---
+
+## 检查点管理
+
+检查点功能提供站点版本管理和回滚能力。
+
+### 检查点设计
+
+- 每个站点使用**集中式** `metadata.json` 管理所有检查点
+- 仅在**部署**时自动创建检查点
+- **切换检查点**时不创建新检查点，仅更新 `current` 指针
+- 不允许删除当前激活的检查点
+
+### 检查点元数据结构
+
+每个站点的 `metadata.json` 包含：
+
+```json
+{
+  "site_id": "blog",
+  "username": "default",
+  "current": "20250106-160000-c3d4e5f6",
+  "checkpoints": [
+    {
+      "id": "20250106-160000-c3d4e5f6",
+      "created_at": "2025-01-06T16:00:00+08:00",
+      "file_size": 1024000,
+      "file_name": "site-v2.0.zip",
+      "source": "deploy",
+      "description": "部署: site-v2.0.zip"
+    },
+    {
+      "id": "20250106-120000-b2c3d4e5",
+      "created_at": "2025-01-06T12:00:00+08:00",
+      "file_size": 950000,
+      "file_name": "site-v1.0.zip",
+      "source": "deploy",
+      "description": "部署: site-v1.0.zip"
+    }
+  ],
+  "updated_at": "2025-01-06T16:00:00+08:00"
+}
+```
+
+### 检查点字段说明
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 检查点唯一标识（时间戳-哈希） |
+| created_at | string | 创建时间（ISO 8601） |
+| file_size | int64 | 备份文件大小（字节） |
+| file_name | string | 原始上传文件名 |
+| source | string | 来源（"deploy" 或 "manual"） |
+| description | string | 描述信息 |
+
+### 9. 列出检查点
+
+获取指定站点的所有检查点及当前激活的检查点。
+
+**端点**
+
+```
+GET /_api/sites/:username/:id/checkpoints
+```
+
+**路径参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| username | string | 租户用户名 |
+| id | string | 站点 ID |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "data": {
+    "current": "20250106-160000-c3d4e5f6",
+    "checkpoints": [
+      {
+        "id": "20250106-160000-c3d4e5f6",
+        "created_at": "2025-01-06T16:00:00+08:00",
+        "file_size": 1024000,
+        "file_name": "site-v2.0.zip",
+        "source": "deploy",
+        "description": "部署: site-v2.0.zip"
+      },
+      {
+        "id": "20250106-120000-b2c3d4e5",
+        "created_at": "2025-01-06T12:00:00+08:00",
+        "file_size": 950000,
+        "file_name": "site-v1.0.zip",
+        "source": "deploy",
+        "description": "部署: site-v1.0.zip"
+      }
+    ],
+    "total": 2
+  }
+}
+```
+
+**示例**
+
+```bash
+curl -u admin:admin http://localhost:1323/_api/sites/default/blog/checkpoints
+```
+
+### 10. 获取检查点详情
+
+获取指定检查点的详细信息。
+
+**端点**
+
+```
+GET /_api/sites/:username/:id/checkpoints/:checkpoint_id
+```
+
+**路径参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| username | string | 租户用户名 |
+| id | string | 站点 ID |
+| checkpoint_id | string | 检查点 ID |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "20250106-153045-a1b2c3d4",
+    "created_at": "2025-01-06T15:30:45+08:00",
+    "file_size": 1048576,
+    "file_name": "site-v1.0.zip",
+    "source": "deploy",
+    "description": "部署: site-v1.0.zip"
+  }
+}
+```
+
+**示例**
+
+```bash
+curl -u admin:admin http://localhost:1323/_api/sites/default/blog/checkpoints/20250106-153045-a1b2c3d4
+```
+
+### 11. 删除检查点
+
+删除指定的检查点备份。**注意：不能删除当前激活的检查点。**
+
+**端点**
+
+```
+DELETE /_api/sites/:username/:id/checkpoints/:checkpoint_id
+```
+
+**路径参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| username | string | 租户用户名 |
+| id | string | 站点 ID |
+| checkpoint_id | string | 检查点 ID |
+
+**响应示例（成功）**
+
+```json
+{
+  "success": true,
+  "message": "检查点已删除"
+}
+```
+
+**响应示例（错误：尝试删除当前检查点）**
+
+```json
+{
+  "success": false,
+  "message": "不能删除当前激活的检查点"
+}
+```
+
+**示例**
+
+```bash
+curl -u admin:admin -X DELETE http://localhost:1323/_api/sites/default/blog/checkpoints/20250106-120000-b2c3d4e5
+```
+
+### 12. 切换检查点
+
+将站点切换到指定检查点版本。**仅切换 current 指针，不创建新检查点。**
+
+**端点**
+
+```
+POST /_api/sites/:username/:id/checkpoints/:checkpoint_id/checkout
+```
+
+**路径参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| username | string | 租户用户名 |
+| id | string | 站点 ID |
+| checkpoint_id | string | 检查点 ID |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "message": "站点已切换到检查点",
+  "data": {
+    "username": "default",
+    "id": "blog",
+    "checkpoint_id": "20250106-120000-b2c3d4e5"
+  }
+---
+
+## 检查点工作流示例
+
+### 自动检查点创建
+
+每次部署时会自动创建检查点：
+
+```bash
+# 部署站点（自动创建检查点）
+curl -u admin:admin -X POST http://localhost:1323/_api/sites/default/blog/deploy \
+  -F "file=@site-v2.0.zip"
+
+# 响应
+{
+  "success": true,
+  "message": "站点已部署",
+  "data": {
+    "username": "default",
+    "id": "blog",
+    "checkpoint": {
+      "id": "20250106-160000-c3d4e5f6",
+      "created_at": "2025-01-06T16:00:00+08:00",
+      "file_size": 1024000,
+      "file_name": "site-v2.0.zip",
+      "source": "deploy",
+      "description": "部署: site-v2.0.zip"
+    }
+  }
+}
+```
+
+### 版本回滚流程
+
+```bash
+# 1. 查看所有检查点和当前激活版本
+curl -u admin:admin http://localhost:1323/_api/sites/default/blog/checkpoints
+# 返回:
+# {
+#   "current": "20250106-160000-c3d4e5f6",  # 当前是 v2.0
+#   "checkpoints": [...]
+# }
+
+# 2. 切换到旧版本（仅切换指针，不创建新检查点）
+curl -u admin:admin -X POST \
+  http://localhost:1323/_api/sites/default/blog/checkpoints/20250106-120000-b2c3d4e5/checkout
+
+# 3. 验证恢复结果
+curl http://blog.localhost
+
+# 4. 查看当前激活版本
+curl -u admin:admin http://localhost:1323/_api/sites/default/blog/checkpoints
+# 返回:
+# {
+#   "current": "20250106-120000-b2c3d4e5",  # 现在是 v1.0
+#   "checkpoints": [...]  # 检查点列表不变
+# }
+
+# 5. 如需再次切换回 v2.0
+curl -u admin:admin -X POST \
+  http://localhost:1323/_api/sites/default/blog/checkpoints/20250106-160000-c3d4e5f6/checkout
+```
+
+### 清理旧检查点
+
+```bash
+# 列出所有检查点
+curl -u admin:admin http://localhost:1323/_api/sites/default/blog/checkpoints
+
+# 删除不需要的旧版本（注意：不能删除 current 指向的检查点）
+curl -u admin:admin -X DELETE \
+  http://localhost:1323/_api/sites/default/blog/checkpoints/20250101-100000-old12345
+```
+
+---
+
+## 检查点存储
+
+- 检查点存储目录: `data/sites-checkpoints/{username}/{site_id}/`
+- 每个站点包含：
+  - `metadata.json` - 集中式元数据文件（包含所有检查点信息和 current 指针）
+  - `checkpoints/` - 检查点备份文件目录
+    - `{checkpoint_id}.tar.gz` - 站点备份文件
+- 检查点 ID 格式: `{时间戳}-{内容哈希前8位}`
+- 备份文件使用 tar.gz 格式压缩
+
+**目录结构示例**
+
+```
+data/sites-checkpoints/
+├── default/
+│   ├── blog/
+│   │   ├── metadata.json              # 集中式元数据
+│   │   └── checkpoints/
+│   │       ├── 20250106-153045-a1b2c3d4.tar.gz
+│   │       └── 20250106-120000-b2c3d4e5.tar.gz
+│   └── docs/
+│       ├── metadata.json
+│       └── checkpoints/
+│           └── 20250106-140000-e5f6g7h8.tar.gz
+└── user1/
+    └── blog/
+        ├── metadata.json
+        └── checkpoints/
+            └── 20250106-170000-f6g7h8i9.tar.gz
+```
+
+**metadata.json 示例**
+
+```json
+{
+  "site_id": "blog",
+  "username": "default",
+  "current": "20250106-153045-a1b2c3d4",
+  "checkpoints": [
+    {
+      "id": "20250106-153045-a1b2c3d4",
+      "created_at": "2025-01-06T15:30:45+08:00",
+      "file_size": 1048576,
+      "file_name": "site-v2.0.zip",
+      "source": "deploy",
+      "description": "部署: site-v2.0.zip"
+    },
+    {
+      "id": "20250106-120000-b2c3d4e5",
+      "created_at": "2025-01-06T12:00:00+08:00",
+      "file_size": 950000,
+      "file_name": "site-v1.0.zip",
+      "source": "deploy",
+      "description": "部署: site-v1.0.zip"
+    }
+  ],
+  "updated_at": "2025-01-06T15:30:45+08:00"
+}
+``` └── docs/
+│       └── checkpoints/
+│           ├── 20250106-140000-e5f6g7h8.tar.gz
+│           └── 20250106-140000-e5f6g7h8.json
+└── user1/
+    └── blog/
+        └── checkpoints/
+            ├── 20250106-170000-f6g7h8i9.tar.gz
+            └── 20250106-170000-f6g7h8i9.json
+```
+

@@ -6,7 +6,9 @@ import (
 	"time"
 )
 
-// Site 站点数据结构（支持多租户）
+// Site 站点数据结构
+// Site 对象在 Manager 中是不可变的，读取操作无需加锁
+// 所有修改操作都通过 Manager 进行，Manager 会创建新的 Site 对象
 type Site struct {
 	ID        string    `json:"id" toml:"id"`                   // 站点唯一标识（可用于目录名）
 	Username  string    `json:"username" toml:"username"`       // 租户用户名（默认为"default"）
@@ -39,7 +41,7 @@ func NewSiteForUser(id, domain, username string) *Site {
 	}
 }
 
-// GetRootDir 获取站点根目录（自动生成）
+// GetRootDir 获取站点根目录
 func (s *Site) GetRootDir(basePath string) string {
 	return filepath.Join(basePath, s.Username, s.ID)
 }
@@ -47,6 +49,24 @@ func (s *Site) GetRootDir(basePath string) string {
 // GetRelativeRootDir 获取相对路径的根目录
 func (s *Site) GetRelativeRootDir() string {
 	return fmt.Sprintf("data/sites/%s/%s", s.Username, s.ID)
+}
+
+// Clone 返回站点的深拷贝
+func (s *Site) Clone() *Site {
+	return &Site{
+		ID:        s.ID,
+		Username:  s.Username,
+		Domain:    s.Domain,
+		Index:     s.Index,
+		Enabled:   s.Enabled,
+		CreatedAt: s.CreatedAt,
+		UpdatedAt: s.UpdatedAt,
+	}
+}
+
+// GetIndex 安全获取 Index 字段
+func (s *Site) GetIndex() string {
+	return s.Index
 }
 
 // Update 更新站点信息
