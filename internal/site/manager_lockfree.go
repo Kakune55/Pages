@@ -242,6 +242,50 @@ func (m *ManagerLockFree) Reload() error {
 	return m.Load()
 }
 
+// GetFullSiteByID 根据 ID 获取完整的 Site 对象（从存储加载）
+func (m *ManagerLockFree) GetFullSiteByID(id string) (*Site, error) {
+	sites, err := m.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range sites {
+		if s.ID == id {
+			return s, nil
+		}
+	}
+	return nil, nil
+}
+
+// GetFullSiteByIDForUser 根据租户和 ID 获取完整的 Site 对象（从存储加载）
+func (m *ManagerLockFree) GetFullSiteByIDForUser(username, id string) (*Site, error) {
+	sites, err := m.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range sites {
+		if s.ID == id && s.Username == username {
+			return s, nil
+		}
+	}
+	return nil, nil
+}
+
+// RemoveForUser 移除指定租户的站点
+func (m *ManagerLockFree) RemoveForUser(username, id string) error {
+	m.mu.Lock()
+	oldSites := m.sites.Load().(map[string]*SiteSnapshot)
+	newSites := make(map[string]*SiteSnapshot)
+	for domain, snap := range oldSites {
+		if snap.ID != id || snap.Username != username {
+			newSites[domain] = snap
+		}
+	}
+	m.sites.Store(newSites)
+	m.mu.Unlock()
+
+	return m.store.RemoveForUser(username, id)
+}
+
 // copyMap 辅助函数：复制 map
 func (m *ManagerLockFree) copyMap(src map[string]*SiteSnapshot) map[string]*SiteSnapshot {
 	dst := make(map[string]*SiteSnapshot, len(src))

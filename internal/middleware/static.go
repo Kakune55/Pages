@@ -13,13 +13,13 @@ import (
 )
 
 // StaticFileServer 静态文件服务中间件
-func StaticFileServer(sm *site.Manager) echo.MiddlewareFunc {
+func StaticFileServer(sm *site.ManagerLockFree) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			host := c.Request().Host
-			s := sm.Get(host)
+			snap := sm.Get(host)
 
-			if s == nil {
+			if snap == nil {
 				return c.JSON(http.StatusNotFound, map[string]string{
 					"error":   "站点未找到",
 					"message": fmt.Sprintf("域名 %s 未绑定任何站点", host),
@@ -29,14 +29,21 @@ func StaticFileServer(sm *site.Manager) echo.MiddlewareFunc {
 			// 获取请求路径
 			reqPath := c.Request().URL.Path
 			if reqPath == "/" {
-				reqPath = "/" + s.Index
+				reqPath = "/" + snap.Index
 			}
 			if strings.HasPrefix(reqPath, "/_api") {
 				return next(c)
 			}
 
 			// 构建文件路径
-			rootDir := s.GetRootDir(c.Get("sitesDir").(string))
+			sitesDirVal := c.Get("sitesDir")
+			baseDir, ok := sitesDirVal.(string)
+			if !ok || baseDir == "" {
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "服务器配置缺失: sitesDir",
+				})
+			}
+			rootDir := filepath.Join(baseDir, snap.RootDir)
 			filePath := filepath.Join(rootDir, reqPath)
 
 			// 安全检查：防止路径遍历攻击
@@ -54,7 +61,7 @@ func StaticFileServer(sm *site.Manager) echo.MiddlewareFunc {
 
 			// 如果是目录，尝试返回 index.html
 			if info.IsDir() {
-				return handleDirectory(c, filePath, s.Index)
+				return handleDirectory(c, filePath, snap.Index)
 			}
 
 			return c.File(filePath)

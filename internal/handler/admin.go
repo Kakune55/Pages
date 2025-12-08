@@ -16,13 +16,13 @@ import (
 
 // AdminHandler 管理接口处理器
 type AdminHandler struct {
-	siteManager        *site.Manager
+	siteManager        *site.ManagerLockFree
 	initializer        *site.Initializer
 	checkpointManager  *deploy.CheckpointManager
 }
 
 // NewAdminHandler 创建管理接口处理器
-func NewAdminHandler(sm *site.Manager, init *site.Initializer, checkpointsDir string) *AdminHandler {
+func NewAdminHandler(sm *site.ManagerLockFree, init *site.Initializer, checkpointsDir string) *AdminHandler {
 	return &AdminHandler{
 		siteManager:       sm,
 		initializer:       init,
@@ -140,7 +140,13 @@ func (h *AdminHandler) GetSite(c echo.Context) error {
 	username := c.Param("username")
 	id := c.Param("id")
 
-	s := h.siteManager.GetByIDForUser(username, id)
+	s, err := h.siteManager.GetFullSiteByIDForUser(username, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("获取站点失败: %v", err),
+		})
+	}
 	if s == nil {
 		return c.JSON(http.StatusNotFound, Response{
 			Success: false,
@@ -166,7 +172,13 @@ func (h *AdminHandler) UpdateSite(c echo.Context) error {
 	username := c.Param("username")
 	id := c.Param("id")
 
-	s := h.siteManager.GetByIDForUser(username, id)
+	s, err := h.siteManager.GetFullSiteByIDForUser(username, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("获取站点失败: %v", err),
+		})
+	}
 	if s == nil {
 		return c.JSON(http.StatusNotFound, Response{
 			Success: false,
@@ -231,7 +243,13 @@ func (h *AdminHandler) DeploySite(c echo.Context) error {
 	username := c.Param("username")
 	id := c.Param("id")
 
-	s := h.siteManager.GetByIDForUser(username, id)
+	s, err := h.siteManager.GetFullSiteByIDForUser(username, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("获取站点失败: %v", err),
+		})
+	}
 	if s == nil {
 		return c.JSON(http.StatusNotFound, Response{
 			Success: false,
@@ -392,6 +410,18 @@ func (h *AdminHandler) Reload(c echo.Context) error {
 
 	// 重新初始化站点目录
 	if h.initializer != nil {
+		snapshots := h.siteManager.List()
+		// 将 SiteSnapshot 转换为 Site 对象以便初始化
+		sites := make([]*site.Site, len(snapshots))
+		for i, snap := range snapshots {
+			sites[i] = &site.Site{
+				ID:       snap.ID,
+				Username: snap.Username,
+				Domain:   snap.Domain,
+				Index:    snap.Index,
+				Enabled:  snap.Enabled,
+			}
+		}
 		_ = h.initializer.InitializeSites(sites)
 	}
 
@@ -513,7 +543,13 @@ func (h *AdminHandler) CheckoutCheckpoint(c echo.Context) error {
 	checkpointID := c.Param("checkpoint_id")
 
 	// 验证站点是否存在
-	s := h.siteManager.GetByIDForUser(username, id)
+	s, err := h.siteManager.GetFullSiteByIDForUser(username, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{
+			Success: false,
+			Message: fmt.Sprintf("获取站点失败: %v", err),
+		})
+	}
 	if s == nil {
 		return c.JSON(http.StatusNotFound, Response{
 			Success: false,

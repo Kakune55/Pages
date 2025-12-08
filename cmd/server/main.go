@@ -44,12 +44,12 @@ func main() {
 
 
 // initSites 初始化站点管理器
-func initSites(cfg *config.Config) (*site.Manager, error) {
+func initSites(cfg *config.Config) (*site.ManagerLockFree, error) {
 	// 创建存储
 	store := site.NewFileStore(cfg.Server.DataDir)
 
 	// 创建站点管理器
-	sm := site.NewManager(store)
+	sm := site.NewManagerLockFree(store)
 
 	// 加载站点
 	if err := sm.Load(); err != nil {
@@ -66,7 +66,19 @@ func initSites(cfg *config.Config) (*site.Manager, error) {
 
 	// 初始化站点目录
 	initializer := site.NewInitializer(cfg.Server.SitesDir)
-	if err := initializer.InitializeSites(sm.List()); err != nil {
+	snapshots := sm.List()
+	// 将 SiteSnapshot 转换为 Site 对象
+	sites := make([]*site.Site, len(snapshots))
+	for i, snap := range snapshots {
+		sites[i] = &site.Site{
+			ID:       snap.ID,
+			Username: snap.Username,
+			Domain:   snap.Domain,
+			Index:    snap.Index,
+			Enabled:  snap.Enabled,
+		}
+	}
+	if err := initializer.InitializeSites(sites); err != nil {
 		fmt.Printf("⚠️ 初始化站点目录失败: %v\n", err)
 	}
 
@@ -74,7 +86,7 @@ func initSites(cfg *config.Config) (*site.Manager, error) {
 }
 
 // createDefaultSites 创建默认站点（支持多租户）
-func createDefaultSites(sm *site.Manager) error {
+func createDefaultSites(sm *site.ManagerLockFree) error {
 	defaultSites := []*site.Site{
 		site.NewSite("default", "localhost"),
 		site.NewSite("example", "example.localhost"),

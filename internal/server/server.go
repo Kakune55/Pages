@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
@@ -18,12 +19,12 @@ import (
 type Server struct {
 	echo        *echo.Echo
 	config      *config.Config
-	siteManager *site.Manager
+	siteManager *site.ManagerLockFree
 	initializer *site.Initializer
 }
 
 // New 创建新的服务器实例
-func New(cfg *config.Config, sm *site.Manager) *Server {
+func New(cfg *config.Config, sm *site.ManagerLockFree) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
@@ -110,9 +111,9 @@ func (s *Server) printStartupInfo() {
 	fmt.Println("静态网站托管服务启动中...")
 	fmt.Printf("监听端口: %s\n", s.config.Server.Port)
 	fmt.Println("已配置的站点:")
-	for _, site := range s.siteManager.List() {
-		rootDir := site.GetRootDir(s.config.Server.SitesDir)
-		fmt.Printf("   - %s -> %s\n", site.Domain, rootDir)
+	for _, snap := range s.siteManager.List() {
+		rootDir := filepath.Join(s.config.Server.SitesDir, snap.RootDir)
+		fmt.Printf("   - %s -> %s\n", snap.Domain, rootDir)
 	}
 	fmt.Println("\n管理 API:")
 	fmt.Println("   - GET    /_api/health              					健康检查")
@@ -137,7 +138,7 @@ func (s *Server) Echo() *echo.Echo {
 }
 
 // SiteManager 返回站点管理器
-func (s *Server) SiteManager() *site.Manager {
+func (s *Server) SiteManager() *site.ManagerLockFree {
 	return s.siteManager
 }
 
