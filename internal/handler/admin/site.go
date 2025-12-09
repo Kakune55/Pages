@@ -10,9 +10,17 @@ import (
 	"pages/internal/site"
 )
 
-// ListSites 列出所有站点
-func (h *Handler) ListSites(c echo.Context) error {
-	sites, err := h.siteManager.ListAll()
+// ListUserSites 列出指定用户的所有站点
+func (h *Handler) ListUserSites(c echo.Context) error {
+	username := c.Param("username")
+	if username == "" {
+		return c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Message: "用户名不能为空",
+		})
+	}
+
+	sites, err := h.siteManager.ListAllForUser(username)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, Response{
 			Success: false,
@@ -31,14 +39,21 @@ func (h *Handler) ListSites(c echo.Context) error {
 
 // CreateSiteRequest 创建站点请求
 type CreateSiteRequest struct {
-	ID       string `json:"id" validate:"required"`
-	Username string `json:"username"` // 租户用户名（可选，默认为"default"）
-	Domain   string `json:"domain" validate:"required"`
-	Index    string `json:"index"`
+	ID     string `json:"id" validate:"required"`
+	Domain string `json:"domain" validate:"required"`
+	Index  string `json:"index"`
 }
 
-// CreateSite 创建站点
-func (h *Handler) CreateSite(c echo.Context) error {
+// CreateUserSite 为指定用户创建站点
+func (h *Handler) CreateUserSite(c echo.Context) error {
+	username := c.Param("username")
+	if username == "" {
+		return c.JSON(http.StatusBadRequest, Response{
+			Success: false,
+			Message: "用户名不能为空",
+		})
+	}
+
 	var req CreateSiteRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, Response{
@@ -52,12 +67,6 @@ func (h *Handler) CreateSite(c echo.Context) error {
 			Success: false,
 			Message: "id 和 domain 为必填字段",
 		})
-	}
-
-	// 默认租户为"default"
-	username := req.Username
-	if username == "" {
-		username = "default"
 	}
 
 	// 创建站点（路径自动生成）

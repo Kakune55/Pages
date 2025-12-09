@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 
+	"pages/internal/analytics"
 	"pages/internal/config"
 	"pages/internal/handler/admin"
 	"pages/internal/middleware"
@@ -17,22 +18,24 @@ import (
 
 // Server 应用服务器
 type Server struct {
-	echo        *echo.Echo
-	config      *config.Config
-	siteManager *site.ManagerLockFree
-	initializer *site.Initializer
+	echo             *echo.Echo
+	config           *config.Config
+	siteManager      *site.ManagerLockFree
+	analyticsManager *analytics.Manager
+	initializer      *site.Initializer
 }
 
 // New 创建新的服务器实例
-func New(cfg *config.Config, sm *site.ManagerLockFree) *Server {
+func New(cfg *config.Config, sm *site.ManagerLockFree, am *analytics.Manager) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
 	s := &Server{
-		echo:        e,
-		config:      cfg,
-		siteManager: sm,
-		initializer: site.NewInitializer(cfg.Server.SitesDir),
+		echo:             e,
+		config:           cfg,
+		siteManager:      sm,
+		analyticsManager: am,
+		initializer:      site.NewInitializer(cfg.Server.SitesDir),
 	}
 
 	s.setupMiddleware()
@@ -99,6 +102,10 @@ func (s *Server) setupRoutes() {
 	adminHandler := admin.NewHandler(s.siteManager, s.initializer, checkpointsDir)
 	adminHandler.RegisterRoutes(adminGroup)
 
+	// 注册统计 API
+	analyticsHandler := admin.NewAnalyticsHandler(s.analyticsManager, s.siteManager)
+	analyticsHandler.RegisterRoutes(adminGroup)
+
 	// Admin UI
 	adminFS, err := fs.Sub(adminui.FS(), "admin")
 	if err != nil {
@@ -110,7 +117,7 @@ func (s *Server) setupRoutes() {
 	}
 
 	// 静态文件服务（作为最后的中间件，处理所有其他请求）
-	s.echo.Use(middleware.StaticFileServer(s.siteManager))
+	s.echo.Use(middleware.StaticFileServer(s.siteManager, s.analyticsManager))
 }
 
 // Start 启动服务器

@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"pages/internal/analytics"
 	"pages/internal/config"
 	"pages/internal/logging"
 	"pages/internal/server"
@@ -42,12 +44,16 @@ func main() {
 	// 初始化站点管理器
 	sm, err := initSites(cfg)
 	if err != nil {
-		fmt.Printf("❌ 站点初始化失败: %v\n", err)
+		fmt.Printf("站点初始化失败: %v\n", err)
 		os.Exit(1)
 	}
 
+	// 初始化统计管理器
+	analyticsDir := filepath.Join(cfg.Server.DataDir, "analytics")
+	am := analytics.NewManager(analyticsDir)
+
 	// 创建并启动服务器
-	srv := server.New(cfg, sm)
+	srv := server.New(cfg, sm, am)
 	
 	// 在 goroutine 中启动服务器
 	go func() {
@@ -62,15 +68,18 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	
-	// 优雅停止服务器
-	slog.Info("收到退出信号，正在关闭服务器...")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
+	// 优雅停止服务器
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("服务器关闭失败", "error", err)
 		os.Exit(1)
 	}
+
+	// 停止统计管理器
+	slog.Info("正在保存统计数据...")
+	am.StopAll()
 	
 	slog.Info("服务器已安全退出")
 	slog.Info("Bye!")
@@ -92,7 +101,7 @@ func initSites(cfg *config.Config) (*site.ManagerLockFree, error) {
 
 	// 如果没有站点，创建默认站点
 	if sm.Count() == 0 {
-		fmt.Println("📝 未找到站点配置，创建默认站点...")
+		fmt.Println("未找到站点配置，创建默认站点...")
 			if err := createDefaultSites(sm); err != nil {
 				return nil, err
 			}
@@ -113,7 +122,7 @@ func initSites(cfg *config.Config) (*site.ManagerLockFree, error) {
 		}
 	}
 	if err := initializer.InitializeSites(sites); err != nil {
-		fmt.Printf("⚠️ 初始化站点目录失败: %v\n", err)
+		fmt.Printf("初始化站点目录失败: %v\n", err)
 	}
 
 	return sm, nil
@@ -132,6 +141,6 @@ func createDefaultSites(sm *site.ManagerLockFree) error {
 		}
 	}
 
-	fmt.Println("✅ 默认站点已创建")
+	fmt.Println("默认站点已创建")
 	return nil
 }

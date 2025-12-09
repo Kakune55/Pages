@@ -7,17 +7,42 @@ import (
 	"path/filepath"
 	"strings"
 
+	"time"
+
 	"github.com/labstack/echo/v4"
 
+	"pages/internal/analytics"
 	"pages/internal/site"
 )
 
 // StaticFileServer 静态文件服务中间件
-func StaticFileServer(sm *site.ManagerLockFree) echo.MiddlewareFunc {
+func StaticFileServer(sm *site.ManagerLockFree, am *analytics.Manager) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			start := time.Now()
 			host := c.Request().Host
 			snap := sm.Get(host)
+
+			// 统计日志
+			if snap != nil && am != nil {
+				defer func() {
+					worker := am.GetWorker(snap.Username, snap.ID)
+					select {
+					case worker.LogChan <- analytics.AccessLog{
+						Time:       start,
+						IP:         c.RealIP(),
+						Path:       c.Request().URL.Path,
+						StatusCode: c.Response().Status,
+						Duration:   time.Since(start).Milliseconds(),
+						UserAgent:  c.Request().UserAgent(),
+						Referer:    c.Request().Referer(),
+						BytesSent:  c.Response().Size,
+					}:
+					default:
+						// Channel 已满，丢弃日志以避免阻塞
+					}
+				}()
+			}
 
 			if snap == nil {
 				return c.JSON(http.StatusNotFound, map[string]string{

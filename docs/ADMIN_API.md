@@ -45,7 +45,7 @@ Authorization: Basic YWRtaW46YWRtaW4=
 或使用 curl 的 `-u` 参数（推荐）：
 
 ```bash
-curl -u admin:admin http://localhost:1323/_api/sites
+curl -u admin:admin http://localhost:1323/_api/users/default/sites
 ```
 
 所有接口返回统一的 JSON 响应格式：
@@ -96,7 +96,257 @@ curl -u admin:admin http://localhost:1323/_api/sites
 
 ## 接口列表
 
-### 1. 获取站点列表
+### 1. 站点管理
+
+#### 1.1 获取用户站点列表
+
+获取指定用户的所有站点。
+
+- **URL**: `/users/:username/sites`
+- **Method**: `GET`
+- **Params**:
+  - `username`: 租户用户名 (例如: `default`)
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "sites": [
+      {
+        "id": "default",
+        "username": "default",
+        "domain": "localhost",
+        "index": "index.html",
+        "enabled": true,
+        "created_at": "...",
+        "updated_at": "..."
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+#### 1.2 创建站点
+
+为指定用户创建新站点。
+
+- **URL**: `/users/:username/sites`
+- **Method**: `POST`
+- **Params**:
+  - `username`: 租户用户名
+
+**Body**:
+
+```json
+{
+  "id": "blog",
+  "domain": "blog.example.com",
+  "index": "index.html"
+}
+```
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "message": "站点创建成功",
+  "data": { ... }
+}
+```
+
+#### 1.3 获取站点详情
+
+- **URL**: `/users/:username/sites/:id`
+- **Method**: `GET`
+
+#### 1.4 更新站点
+
+- **URL**: `/users/:username/sites/:id`
+- **Method**: `PUT`
+
+**Body**:
+
+```json
+{
+  "domain": "new.example.com",
+  "index": "home.html",
+  "enabled": true
+}
+```
+
+#### 1.5 删除站点
+
+- **URL**: `/users/:username/sites/:id`
+- **Method**: `DELETE`
+
+---
+
+### 2. 部署与用量
+
+#### 2.1 部署站点
+
+上传 ZIP 压缩包部署站点内容。
+
+- **URL**: `/users/:username/sites/:id/deploy`
+- **Method**: `POST`
+- **Content-Type**: `multipart/form-data`
+
+**Form Data**:
+- `file`: 站点压缩包 (.zip)
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "message": "部署成功",
+  "data": {
+    "files_count": 15,
+    "total_size": 102400
+  }
+}
+```
+
+#### 2.2 获取站点用量
+
+- **URL**: `/users/:username/sites/:id/usage`
+- **Method**: `GET`
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "disk_usage": 1048576,
+    "disk_usage_human": "1.0 MB",
+    "file_count": 120
+  }
+}
+```
+
+#### 2.3 获取用户总用量
+
+- **URL**: `/users/:username/usage`
+- **Method**: `GET`
+
+---
+
+### 3. 检查点 (版本管理)
+
+#### 3.1 获取检查点列表
+
+- **URL**: `/users/:username/sites/:id/checkpoints`
+- **Method**: `GET`
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "current": "cp_20251209_120000",
+    "checkpoints": [
+      {
+        "id": "cp_20251209_120000",
+        "created_at": "...",
+        "size": 102400,
+        "description": "Initial deploy"
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+#### 3.2 回滚到检查点
+
+- **URL**: `/users/:username/sites/:id/checkpoints/:checkpoint_id/checkout`
+- **Method**: `POST`
+
+#### 3.3 删除检查点
+
+- **URL**: `/users/:username/sites/:id/checkpoints/:checkpoint_id`
+- **Method**: `DELETE`
+
+---
+
+### 4. 统计 (Analytics)
+
+#### 4.1 获取用户统计概览
+
+获取指定用户下所有站点的今日统计数据。
+
+- **URL**: `/users/:username/analytics`
+- **Method**: `GET`
+
+**Response**:
+
+```json
+{
+  "site_id_1": {
+    "date": "2025-12-09",
+    "pv": 100,
+    "uv": 50,
+    "bytes": 1024000,
+    "total_duration": 5000,
+    "error_count": 0
+  },
+  "site_id_2": { ... }
+}
+```
+
+#### 4.2 获取站点详细统计
+
+获取指定站点的统计数据。支持获取历史数据。
+
+- **URL**: `/users/:username/sites/:id/analytics`
+- **Method**: `GET`
+- **Query Params**:
+  - `scope`: 可选，设置为 `full` 以获取历史数据。
+
+**Response (默认)**:
+
+```json
+{
+  "date": "2025-12-09",
+  "pv": 100,
+  "uv": 50,
+  "bytes": 1024000,
+  "total_duration": 5000,
+  "error_count": 0
+}
+```
+
+**Response (scope=full)**:
+
+```json
+{
+  "today": { ... },
+  "history": {
+    "2025-12-08": { ... },
+    "2025-12-07": { ... }
+  }
+}
+```
+
+---
+
+### 5. 系统管理
+
+#### 5.1 重载配置
+
+- **URL**: `/system/reload`
+- **Method**: `POST`
+
+#### 5.2 健康检查
+
+- **URL**: `/system/health`
+- **Method**: `GET`
 
 列出所有站点。
 
