@@ -18,6 +18,9 @@ func (h *Handler) RegisterRoutes(g *echo.Group) {
 	// 部署管理
 	siteGroup.POST("/:username/:id/deploy", h.DeploySite)
 	siteGroup.GET("/:username/:id/usage", h.GetSiteUsage)
+	
+	// 用户管理
+	g.GET("/users/:username/usage", h.GetUserUsage)
 
 	// 检查点管理
 	siteGroup.GET("/:username/:id/checkpoints", h.ListCheckpoints)

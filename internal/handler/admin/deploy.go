@@ -249,3 +249,54 @@ func (h *Handler) GetSiteUsage(c echo.Context) error {
 		Data:    usage,
 	})
 }
+
+// GetUserUsage 获取用户所有站点的使用情况汇总
+func (h *Handler) GetUserUsage(c echo.Context) error {
+	username := c.Param("username")
+
+	// 获取用户所有站点
+	sites := h.siteManager.ListForUser(username)
+	
+	totalUsage := deploy.DiskUsage{}
+
+	for _, s := range sites {
+		// 从元数据中读取缓存的使用量信息
+		usage, err := h.checkpointManager.GetStorageUsage(username, s.ID)
+		if err != nil {
+			continue
+		}
+		
+		totalUsage.DeployedSize += usage.DeployedSize
+		totalUsage.CheckpointsSize += usage.CheckpointsSize
+		totalUsage.TotalSize += usage.TotalSize
+		totalUsage.FileCount += usage.FileCount
+		totalUsage.CheckpointCount += usage.CheckpointCount
+	}
+
+	totalUsage.DeployedSizeHR = formatBytes(totalUsage.DeployedSize)
+	totalUsage.CheckpointsSizeHR = formatBytes(totalUsage.CheckpointsSize)
+	totalUsage.TotalSizeHR = formatBytes(totalUsage.TotalSize)
+
+	return c.JSON(http.StatusOK, Response{
+		Success: true,
+		Data:    totalUsage,
+	})
+}
+
+// formatBytes 将字节数格式化为人类可读的格式
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+
+	// KB, MB, GB, TB, PB
+	units := []string{"KB", "MB", "GB", "TB", "PB"}
+	return fmt.Sprintf("%.2f %s", float64(bytes)/float64(div), units[exp])
+}
