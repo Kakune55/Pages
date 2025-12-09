@@ -397,7 +397,46 @@ GET /_api/health
 
 ---
 
-### 8. 一键部署站点
+
+### 8. 获取站点使用情况
+
+获取指定站点的磁盘空间等使用情况。
+
+**请求**
+
+```http
+GET /_api/sites/:username/:id/usage
+```
+
+**路径参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| username | string | 租户用户名 |
+| id | string | 站点 ID |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "data": {
+    "total_size": 1234567,      // 检查点总占用字节数
+    "deployed_size": 654321,    // 当前部署版本占用字节数
+    "checkpoints_count": 3      // 检查点数量
+  }
+}
+```
+
+**状态码**
+
+- `200 OK` - 查询成功
+- `404 Not Found` - 站点不存在
+- `500 Internal Server Error` - 服务器错误
+
+---
+
+### 9. 一键部署站点
 
 上传 zip 或 tar.gz 压缩包，自动清空并替换站点根目录。
 
@@ -658,7 +697,7 @@ curl -u admin:admin http://localhost:1323/_api/sites/user2/blog
 | source | string | 来源（"deploy" 或 "manual"） |
 | description | string | 描述信息 |
 
-### 9. 列出检查点
+### 10. 列出检查点
 
 获取指定站点的所有检查点及当前激活的检查点。
 
@@ -711,7 +750,7 @@ GET /_api/sites/:username/:id/checkpoints
 curl -u admin:admin http://localhost:1323/_api/sites/default/blog/checkpoints
 ```
 
-### 10. 获取检查点详情
+### 11. 获取检查点详情
 
 获取指定检查点的详细信息。
 
@@ -751,7 +790,7 @@ GET /_api/sites/:username/:id/checkpoints/:checkpoint_id
 curl -u admin:admin http://localhost:1323/_api/sites/default/blog/checkpoints/20250106-153045-a1b2c3d4
 ```
 
-### 11. 删除检查点
+### 12. 删除检查点
 
 删除指定的检查点备份。**注意：不能删除当前激活的检查点。**
 
@@ -793,7 +832,7 @@ DELETE /_api/sites/:username/:id/checkpoints/:checkpoint_id
 curl -u admin:admin -X DELETE http://localhost:1323/_api/sites/default/blog/checkpoints/20250106-120000-b2c3d4e5
 ```
 
-### 12. 切换检查点
+### 13. 切换检查点
 
 将站点切换到指定检查点版本。**仅切换 current 指针，不创建新检查点。**
 
@@ -822,7 +861,8 @@ POST /_api/sites/:username/:id/checkpoints/:checkpoint_id/checkout
     "id": "blog",
     "checkpoint_id": "20250106-120000-b2c3d4e5"
   }
----
+}
+```
 
 ## 检查点工作流示例
 
@@ -834,8 +874,9 @@ POST /_api/sites/:username/:id/checkpoints/:checkpoint_id/checkout
 # 部署站点（自动创建检查点）
 curl -u admin:admin -X POST http://localhost:1323/_api/sites/default/blog/deploy \
   -F "file=@site-v2.0.zip"
-
+```
 # 响应
+``` json
 {
   "success": true,
   "message": "站点已部署",
