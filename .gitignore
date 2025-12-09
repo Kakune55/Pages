@@ -1,3 +1,4 @@
 #----后端-----
 data
 config.toml
+*.exe

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 
 	"github.com/labstack/echo/v4"
@@ -11,6 +12,7 @@ import (
 	"pages/internal/handler/admin"
 	"pages/internal/middleware"
 	"pages/internal/site"
+	adminui "pages/web"
 )
 
 // Server 应用服务器
@@ -81,18 +83,31 @@ func (s *Server) setupMiddleware() {
 
 // setupRoutes 设置路由
 func (s *Server) setupRoutes() {
-	// 管理 API（在静态文件中间件之前注册，优先级更高）
-	adminGroup := s.echo.Group("/_api")
-	adminGroup.Use(echomw.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+	// 统一的认证中间件
+	authMiddleware := echomw.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
 		adminUser := s.config.Server.AdminUser
 		adminPass := s.config.Server.AdminPass
 		return username == adminUser && password == adminPass, nil
-	}))
+	})
+
+	// 管理 API（在静态文件中间件之前注册，优先级更高）
+	adminGroup := s.echo.Group("/_api")
+	adminGroup.Use(authMiddleware)
 	
 	// 检查点存储在站点目录的父级 checkpoints 目录
 	checkpointsDir := s.config.Server.SitesDir + "-checkpoints"
 	adminHandler := admin.NewHandler(s.siteManager, s.initializer, checkpointsDir)
 	adminHandler.RegisterRoutes(adminGroup)
+
+	// Admin UI
+	adminFS, err := fs.Sub(adminui.FS(), "admin")
+	if err != nil {
+		slog.Error("Failed to load admin UI filesystem", "err", err)
+	} else {
+		adminUIGroup := s.echo.Group("/_admin")
+		adminUIGroup.Use(authMiddleware)
+		adminUIGroup.StaticFS("/", adminFS)
+	}
 
 	// 静态文件服务（作为最后的中间件，处理所有其他请求）
 	s.echo.Use(middleware.StaticFileServer(s.siteManager))

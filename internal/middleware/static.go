@@ -39,7 +39,7 @@ func StaticFileServer(sm *site.ManagerLockFree) echo.MiddlewareFunc {
 			if reqPath == "/" {
 				reqPath = "/" + snap.Index
 			}
-			if strings.HasPrefix(reqPath, "/_api") {
+			if strings.HasPrefix(reqPath, "/_api") || strings.HasPrefix(reqPath, "/_admin") {
 				return next(c)
 			}
 

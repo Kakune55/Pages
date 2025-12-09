@@ -20,7 +20,13 @@ import (
 const configPath = "config.toml"
 
 func main() {
-		// 加载配置
+	fmt.Println(" ██████╗  █████╗  ██████╗ ███████╗███████╗")
+	fmt.Println(" ██╔══██╗██╔══██╗██╔════╝ ██╔════╝██╔════╝")
+	fmt.Println(" ██████╔╝███████║██║  ███╗█████╗  ███████╗")
+	fmt.Println(" ██╔═══╝ ██╔══██║██║   ██║██╔══╝  ╚════██║")
+	fmt.Println(" ██║     ██║  ██║╚██████╔╝███████╗███████║")
+	fmt.Println(" ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝")
+	// 加载配置
 	cfg, created, err := config.LoadOrInit(configPath, true)
 	if err != nil {
 		fmt.Printf("加载配置失败: %v\n", err)
